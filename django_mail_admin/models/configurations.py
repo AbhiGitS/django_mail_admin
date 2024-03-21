@@ -21,7 +21,7 @@ from django_mail_admin.settings import get_allowed_mimetypes, strip_unallowed_mi
 from django_mail_admin.signals import message_received
 from django_mail_admin.transports import Pop3Transport, ImapTransport, \
     MaildirTransport, MboxTransport, BabylTransport, MHTransport, \
-    MMDFTransport, GmailImapTransport
+    MMDFTransport, GmailImapTransport, O365Transport
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +93,11 @@ class Mailbox(models.Model):
             "<br />"
             "Be sure to urlencode your username and password should they "
             "contain illegal characters (like @, :, etc)."
+            "<br />"
+            "For MS-365 email accounts use: <pre>office365:username@example.com:/?"
+            "client_id=<client_id>&client_secret=<client_secret>&</pre>"
+            "supports only on-behalf-of-a-user; thus requires user's auth & consent"
+            "<br />"
         )),
         blank=True,
         null=True,
@@ -110,6 +115,8 @@ class Mailbox(models.Model):
             "setting is unnecessary.<br />"
             "If you send e-mail without setting this, your 'From' header will'"
             "be set to match the setting `DEFAULT_FROM_EMAIL`."
+            "<br />"
+            "Required for Office 365 mailbox"
         )),
         blank=True,
         null=True,
@@ -234,6 +241,13 @@ class Mailbox(models.Model):
                 archive=self.archive
             )
             conn.connect(self.username, self.password)
+        elif self.type == O365Transport.scheme: #'office365'
+            conn = O365Transport(last_polled=self.last_polling)
+            conn.connect(
+                client_id_key=self._query_string.get( "client_id_key", [""])[0],
+                client_secret_key=self._query_string.get("client_secret_key", [""])[0],
+                owner_email=self.from_email,
+            )
         elif self.type == 'pop3':
             conn = Pop3Transport(
                 self.location,

@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/1.9/ref/settings/
 
 import os
 import sys
+from decouple import config
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -121,4 +122,11 @@ MEDIA_URL = '/media/'
 INSTALLED_APPS += (
     'django_admin_row_actions',
 )
-EMAIL_BACKEND = 'django_mail_admin.backends.CustomEmailBackend'
+EMAIL_BACKEND = 'django_mail_admin.backends.O365Backend'
+
+O365_ADMIN_SETTINGS = {
+    "O365_AUTH_BACKEND_TOKEN_DIR":config("O365_AUTH_BACKEND_TOKEN_DIR"),
+    "O365_AUTH_BACKEND_TOKEN_FILE":config("O365_AUTH_BACKEND_TOKEN_FILE"),
+    "O365_CLIENT_ID":config("O365_CLIENT_ID"),
+    "O365_CLIENT_SECRET":config("O365_CLIENT_SECRET")
+}

@@ -1,12 +1,16 @@
 import logging
 import threading
 
+from urllib import parse
+
 from django.core.mail.backends.base import BaseEmailBackend
 from django.core.mail.backends.smtp import EmailBackend
 
 from .mail import create
 from .models import Outbox, create_attachments
 from .utils import PRIORITY
+
+from django_mail_admin.o365_util import O365Connection
 
 logger = logging.getLogger(__name__)
 
@@ -66,3 +70,44 @@ class OutboxEmailBackend(BaseEmailBackend):
                 logger.exception('Email queue failed')
 
         return len(email_messages)
+
+class O365Backend(BaseEmailBackend):
+    """
+    Backend to handle sending emails via o365 connection
+    """
+    scheme = O365Connection.scheme #"office365"
+    def __init__(self, fail_silently: bool=False, **kwargs) -> None:
+        super().__init__(fail_silently, **kwargs)
+        self.conn: O365Connection = None
+        self.from_email: str = None
+        self.fail_silently: bool = fail_silently
+        self._lock = threading.RLock()
+
+    def open(self):
+        configuration: Outbox = None
+
+        configurations = Outbox.objects.filter(active=True)
+        if len(configurations) > 1 or len(configurations) == 0:
+            raise ValueError('Got %(l)s active configurations, expected 1' % {'l': len(configurations)})
+        else:
+            configuration = configurations.first()
+        
+        self.from_email = configuration.email_host_user
+        
+        self.connection = None
+        parseresult=parse.urlparse(configuration.email_host)
+        if not self.scheme == parseresult.scheme.lower():
+            raise ValueError(f'Invalid EMAIL_HOST scheme, expected "{self.scheme}", got "{parseresult.scheme}"')
+        query_dict=dict(parse.parse_qsl(parseresult.query))
+        client_id_key=query_dict.get( "client_id_key", "" )
+        client_secret_key=query_dict.get("client_secret_key", "")
+        
+        self.conn = O365Connection(
+            client_id_key=client_id_key, 
+            client_secret_key=client_secret_key
+        )
+        
+    def send_messages(self, email_messages) -> int:
+        if not self.conn or not self.from_email:
+            raise Exception(f"Backend not yet ready to send_messages")
+        return self.conn.send_messages(self.from_email, email_messages, fail_silently=self.fail_silently)
