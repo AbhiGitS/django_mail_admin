@@ -6,9 +6,11 @@ import logging
 from base64 import b64encode
 from datetime import datetime
 from django.conf import settings
+from django.core.mail.message import EmailMessage
 
 from O365 import MSGraphProtocol
-from O365 import Account, FileSystemTokenBackend
+from O365 import Account, Message, FileSystemTokenBackend
+from O365.mailbox import MailBox
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +71,32 @@ class O365Connection:
             logger.info("Hold on .... going for authentication!")
             self.account.authenticate()
 
-    def _prepare_attachment_for_dispatch(self, attachment):
+    def _get_message_by_id(self, mailbox:MailBox, message_id:str, folder_name="Inbox") -> Message|None:
+        """retrieve message by id from given mailbox"""
+        if not message_id:
+            return None
+        mail_folder = mailbox.get_folder(folder_name=folder_name) if mailbox else None
+        qstr = f"internetMessageId eq '{message_id}'"
+        emails = mail_folder.get_messages(query=qstr) if mail_folder else []
+        for email in emails:
+            return email
+        return None
+
+    def _get_reply_to_message(self, mailbox:MailBox, msg: EmailMessage) -> Message|None:
+        """retrieve message representing in-reply-to id in msg headers"""
+        if not msg or not msg.extra_headers or not mailbox:
+            return None
+        msg_id = msg.extra_headers.get('In-Reply-To', None)
+        reply_to_msg = self._get_message_by_id( mailbox, msg_id ) if msg_id else None
+        return reply_to_msg
+    
+    def _prepare_new_message(self, mailbox, msg:EmailMessage):
+        """create new or reply-to draft based on msg in-reply-to header"""
+        reply_to_message = self._get_reply_to_message(mailbox, msg)
+        new_draft_message = reply_to_message.reply() if reply_to_message else mailbox.new_message()
+        return new_draft_message
+ 
+    def _prepare_attachment_for_dispatch(self, attachment) -> dict:
         """bridge from Django EmailMessage Attachment to O365 Attachment"""
         content=attachment[1]
         b64content=b64encode( content if isinstance(content, bytes) else bytes(content, 'utf-8') ).decode('utf-8')
@@ -89,12 +116,14 @@ class O365Connection:
         mailbox = self.account.mailbox(from_email)
         for msg in email_messages:
             try:
-                m = mailbox.new_message()
+                m = self._prepare_new_message(mailbox, msg)
                 m.to.add(msg.to)
                 m.cc.add(msg.cc)
                 m.bcc.add(msg.bcc)
-                m.subject = msg.subject
+                m.reply_to.add(msg.reply_to)
                 m.body = msg.body
+                if msg.subject:
+                    m.subject = msg.subject
                 m.save_message()
                 m.attachments.add( [self._prepare_attachment_for_dispatch(attachment) for attachment in msg.attachments] )
                 for attachment in m.attachments:
