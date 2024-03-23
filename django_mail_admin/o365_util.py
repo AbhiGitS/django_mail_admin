@@ -59,8 +59,9 @@ class O365Connection:
         token_path = settings.O365_ADMIN_SETTINGS.get("O365_AUTH_BACKEND_TOKEN_DIR")
         if not token_path:
             token_path = "."
+            logger.warning(f"Using default token path '{token_path}';")
             logger.warning(
-                f"Using default path '{token_path}'; highly recommended to set explicit path in O365_ADMIN_SETTINGS.O365_AUTH_BACKEND_TOKEN_DIR"
+                " - set explicit path in O365_ADMIN_SETTINGS.    O365_AUTH_BACKEND_TOKEN_DIR"
             )
 
         token_filename = settings.O365_ADMIN_SETTINGS.get(
@@ -68,8 +69,9 @@ class O365Connection:
         )
         if not token_filename:
             token_filename = "o365_token.txt"
+            logger.warning(f"Using default token filename {token_filename};")
             logger.warning(
-                f"Using default token filename {token_filename}; highly recommended to set explicit path in O365_ADMIN_SETTINGS.O365_AUTH_BACKEND_TOKEN_DIR"
+                " - set explicit path in O365_ADMIN_SETTINGS.O365_AUTH_BACKEND_TOKEN_FILE"
             )
 
         token_backend = FileSystemTokenBackend(
@@ -165,7 +167,7 @@ class O365Connection:
 
     def get_messages(self, owner_email: str, last_polled: datetime, condition):
         if not self.account.is_authenticated:
-            logger.error(f"get_messages unavailable; account not authenticated!")
+            logger.error("get_messages unavailable; account not authenticated!")
             return
         mailbox = self.account.mailbox(owner_email)
         mail_folder = mailbox.get_folder(folder_name="Inbox")

@@ -40,7 +40,7 @@ class O365Transport(EmailTransport):
 
     def get_message(self, condition):
         if not self.conn:
-            logger.error(f"get_message unavailable; account not connected yet")
+            logger.error("get_message unavailable; account not connected yet")
             return
         for mail in self.conn.get_messages(
             self.owner_email, self.last_polled, condition
