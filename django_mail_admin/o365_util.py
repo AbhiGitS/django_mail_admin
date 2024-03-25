@@ -59,20 +59,24 @@ class O365Connection:
         token_path = settings.O365_ADMIN_SETTINGS.get("O365_AUTH_BACKEND_TOKEN_DIR")
         if not token_path:
             token_path = "."
+            """
             logger.warning(f"Using default token path '{token_path}';")
             logger.warning(
-                " - set explicit path in O365_ADMIN_SETTINGS.    O365_AUTH_BACKEND_TOKEN_DIR"
+                " - set explicit path in O365_ADMIN_SETTINGS.O365_AUTH_BACKEND_TOKEN_DIR"
             )
+            """
 
         token_filename = settings.O365_ADMIN_SETTINGS.get(
             "O365_AUTH_BACKEND_TOKEN_FILE"
         )
         if not token_filename:
             token_filename = "o365_token.txt"
+            """
             logger.warning(f"Using default token filename {token_filename};")
             logger.warning(
                 " - set explicit path in O365_ADMIN_SETTINGS.O365_AUTH_BACKEND_TOKEN_FILE"
             )
+            """
 
         token_backend = FileSystemTokenBackend(
             token_path=token_path, token_filename=token_filename
@@ -171,9 +175,11 @@ class O365Connection:
             return
         mailbox = self.account.mailbox(owner_email)
         mail_folder = mailbox.get_folder(folder_name="Inbox")
+        qstr = ""
+        order_by = f"receivedDateTime DESC"
         if last_polled:
             # ISO 8601 format AND in UTC time.
             # For example, midnight UTC on Jan 1, 2022 is 2022-01-01T00:00:00Z.
             qstr = f"receivedDateTime gt {last_polled.replace(microsecond=0).isoformat()[:-6]}Z"
-        for mail in mail_folder.get_messages(query=qstr):
+        for mail in mail_folder.get_messages(order_by=order_by, query=qstr):
             yield (mail.get_mime_content())
