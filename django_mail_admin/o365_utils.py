@@ -2,11 +2,14 @@
 Helper utility classes/ functions for O365 support
 """
 import logging
+import hashlib
 
 from base64 import b64encode
 from datetime import datetime
 from django.conf import settings
 from django.core.mail.message import EmailMessage
+
+from O365.utils import BaseTokenBackend
 
 from O365 import MSGraphProtocol
 from O365 import Account, Message, FileSystemTokenBackend
@@ -20,8 +23,16 @@ class O365Connection:
     o365_protocol = "MSGraphProtocol"
 
     def __init__(
-        self, client_id_key: str, client_secret_key: str, protocol=o365_protocol
+        self,
+        from_email: str,
+        client_id_key: str,
+        client_secret_key: str,
+        protocol=o365_protocol,
     ) -> None:
+        self.from_email = from_email
+        if not self.from_email:
+            raise ValueError("from_email required.")
+
         self.account = None
         try:
             client_id, client_secret = self._get_auth_info(
@@ -45,6 +56,18 @@ class O365Connection:
 
         return client_id, client_secret
 
+    def _decorate_token_name(self):
+        bname = settings.O365_ADMIN_SETTINGS.get(
+            "O365_AUTH_BACKEND_AZ_BLOB_NAME", "o365_token.txt"
+        )
+        return "{}/{}".format(
+            hashlib.sha1(
+                settings.O365_ADMIN_SETTINGS.get("O365_CLIENT_ID").encode("utf-8")
+                + bname.encode("utf-8")
+            ).hexdigest(),
+            bname,
+        )
+
     def _connect(self, client_id, client_secret, protocol) -> None:
         # connect_id/ and secret should have been already setup
         # for offline & message_all scopes, for on behalf of user access.
@@ -56,30 +79,14 @@ class O365Connection:
         if not protocol_selected:
             raise Exception(f"Unsupported protocol {protocol}")
 
-        token_path = settings.O365_ADMIN_SETTINGS.get("O365_AUTH_BACKEND_TOKEN_DIR")
-        if not token_path:
-            token_path = "."
-            """
-            logger.warning(f"Using default token path '{token_path}';")
-            logger.warning(
-                " - set explicit path in O365_ADMIN_SETTINGS.O365_AUTH_BACKEND_TOKEN_DIR"
-            )
-            """
-
-        token_filename = settings.O365_ADMIN_SETTINGS.get(
-            "O365_AUTH_BACKEND_TOKEN_FILE"
-        )
-        if not token_filename:
-            token_filename = "o365_token.txt"
-            """
-            logger.warning(f"Using default token filename {token_filename};")
-            logger.warning(
-                " - set explicit path in O365_ADMIN_SETTINGS.O365_AUTH_BACKEND_TOKEN_FILE"
-            )
-            """
-
-        token_backend = FileSystemTokenBackend(
-            token_path=token_path, token_filename=token_filename
+        token_backend = AzureTokenBackend(
+            connection_str=settings.O365_ADMIN_SETTINGS.get(
+                "O365_AUTH_BACKEND_AZ_CONNECTION_STR"
+            ),
+            container_name=settings.O365_ADMIN_SETTINGS.get(
+                "O365_AUTH_BACKEND_AZ_CONTAINER_PATH"
+            ),
+            blob_name=self._decorate_token_name(),
         )
 
         self.account = Account(
@@ -132,14 +139,9 @@ class O365Connection:
         ).decode("utf-8")
         return {"name": f"{attachment[0]}", "content": b64content, "on_disk": False}
 
-    def send_messages(
-        self, from_email: str, email_messages, fail_silently: bool = False
-    ) -> int:
-        if not from_email:
-            raise ValueError("from_email can not be empty!")
-
+    def send_messages(self, email_messages, fail_silently: bool = False) -> int:
         sent_messages = 0
-        mailbox = self.account.mailbox(from_email)
+        mailbox = self.account.mailbox(self.from_email)
         for msg in email_messages:
             try:
                 m = self._prepare_new_message(mailbox, msg)
@@ -183,3 +185,99 @@ class O365Connection:
             qstr = f"receivedDateTime gt {last_polled.replace(microsecond=0).isoformat()[:-6]}Z"
         for mail in mail_folder.get_messages(order_by=order_by, query=qstr):
             yield (mail.get_mime_content())
+
+
+class AzureTokenBackend(BaseTokenBackend):
+    """An Azure Blob backend to store tokens"""
+
+    def __init__(self, connection_str, container_name, blob_name):
+        """
+        Init Backend
+        :param str connection_str: Connection str for the Blob storage account
+        :param str container_name: Container string for blob file.
+        :param str blob_name: Blob name
+        """
+        self.container_name = container_name
+        self.blob_name = blob_name
+        try:
+            from azure.storage.blob import BlobClient
+        except ModuleNotFoundError as e:
+            raise Exception(
+                "Please install the azure-storage-blob package to use this token backend."
+            ) from e
+        super().__init__()
+
+        self._client = BlobClient.from_connection_string(
+            connection_str,  # type: ignore
+            container_name=container_name,  # type: ignore
+            blob_name=blob_name,  # type: ignore
+        )
+
+    def __repr__(self):
+        return "AzureTokenBackend('{}', '{}')".format(
+            self.connection_str, self.container_name
+        )
+
+    def load_token(self):
+        """
+        Retrieves the token from the store
+        :return dict or None: The token if exists, None otherwise
+        """
+        token = None
+        try:
+            downloader = self._client.download_blob(max_concurrency=1, encoding="UTF-8")
+            token_str = downloader.readall()
+            token = self.token_constructor(self.serializer.loads(token_str))
+        except Exception as e:
+            logger.error(
+                "Token (blob_text: {}/{}) could not be retrieved from the backend: {}".format(
+                    self.container_name, self.blob_name, e
+                )
+            )
+
+        return token
+
+    def save_token(self):
+        """
+        Saves the token dict in the store
+        :return bool: Success / Failure
+        """
+        if self.token is None:
+            raise ValueError('You have to set the "token" first.')
+
+        try:
+            r = self._client.upload_blob(self.serializer.dumps(self.token))
+        except Exception as e:
+            logger.error("Token secret could not be created: {}".format(e))
+            return False
+        return True
+
+    def delete_token(self):
+        """
+        Deletes the token from the store
+        :return bool: Success / Failure
+        """
+        try:
+            r = self._client.delete_blob()
+        except Exception as e:
+            logger.error("Token secret could not be deleted: {}".format(e))
+            return False
+        else:
+            logger.warning(
+                "Deleted token secret {} ({}).".format(
+                    self.container_name, self.blob_name
+                )
+            )
+            return True
+
+    def check_token(self):
+        """
+        Checks if the token exists
+        :return bool: True if it exists on the store
+        """
+        try:
+            _ = self._client.exists()
+        except:
+            return False
+        else:
+            return True

@@ -10,7 +10,7 @@ from .mail import create
 from .models import Outbox, create_attachments
 from .utils import PRIORITY
 
-from django_mail_admin.o365_util import O365Connection
+from django_mail_admin.o365_utils import O365Connection
 
 logger = logging.getLogger(__name__)
 
@@ -130,12 +130,12 @@ class O365Backend(BaseEmailBackend):
         client_secret_key = query_dict.get("client_secret_key", "")
 
         self.conn = O365Connection(
-            client_id_key=client_id_key, client_secret_key=client_secret_key
+            from_email=self.from_email,
+            client_id_key=client_id_key,
+            client_secret_key=client_secret_key,
         )
 
     def send_messages(self, email_messages) -> int:
         if not self.conn or not self.from_email:
             raise Exception(f"Backend not yet ready to send_messages")
-        return self.conn.send_messages(
-            self.from_email, email_messages, fail_silently=self.fail_silently
-        )
+        return self.conn.send_messages(email_messages, fail_silently=self.fail_silently)

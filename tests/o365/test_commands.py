@@ -10,6 +10,7 @@ from django.core.management import call_command
 
 from django_mail_admin.models import Outbox, IncomingEmail, OutgoingEmail, STATUS
 from django_mail_admin.models import Mailbox
+from django_mail_admin.mail import send_queued
 
 
 class O365CommandTest(TestCase):
@@ -51,7 +52,10 @@ class O365CommandTest(TestCase):
             message=test_body,
             backend_alias="o365",
         )
-        call_command("send_queued_mail", log_level=0)
+        # call_command("send_queued_mail", log_level=0)
+        total_sent, total_failed = send_queued()
+        assert total_failed == 0
+        assert total_sent == 1
         time.sleep(5)
         max_attempts = 3
         latest_email = None
