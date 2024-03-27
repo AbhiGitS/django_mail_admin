@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class O365Transport(EmailTransport):
-    scheme = O365Connection.scheme
+    SCHEME = O365Connection.SCHEME
 
     def __init__(self, owner_email: str, last_polled: datetime = None) -> None:
         super().__init__()
@@ -23,6 +23,7 @@ class O365Transport(EmailTransport):
 
     def connect(
         self,
+        client_app_id: str,
         client_id_key: str,
         client_secret_key: str,
         o365_protocol="MSGraphProtocol",
@@ -30,6 +31,7 @@ class O365Transport(EmailTransport):
         try:
             self.conn = O365Connection(
                 from_email=self.owner_email,
+                client_app_id=client_app_id,
                 client_id_key=client_id_key,
                 client_secret_key=client_secret_key,
                 protocol=o365_protocol,

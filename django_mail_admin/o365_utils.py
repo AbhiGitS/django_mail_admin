@@ -18,43 +18,94 @@ from O365.mailbox import MailBox
 logger = logging.getLogger(__name__)
 
 
+class O365NotAuthenticated(Exception):
+    pass
+
+
 class O365Connection:
-    scheme = "office365"
-    o365_protocol = "MSGraphProtocol"
+    SCHEME = "office365"
+    O365_PROTOCOL = "MSGraphProtocol"
+    DEFAULT_CLIENT_ID_KEY = "O365_CLIENT_ID"
+    DEFAULT_CLIENT_SECRET_KEY = "O365_CLIENT_SECRET"
 
     def __init__(
         self,
         from_email: str,
+        client_app_id: str,
         client_id_key: str,
         client_secret_key: str,
-        protocol=o365_protocol,
+        protocol: str = O365_PROTOCOL,
     ) -> None:
         self.from_email = from_email
         if not self.from_email:
             raise ValueError("from_email required.")
 
         self.account = None
+        self.selected_settings = None
         try:
             client_id, client_secret = self._get_auth_info(
-                client_id_key, client_secret_key
+                client_app_id,
+                client_id_key if client_id_key else self.DEFAULT_CLIENT_ID_KEY,
+                client_secret_key
+                if client_secret_key
+                else self.DEFAULT_CLIENT_SECRET_KEY,
             )
-            self._connect(client_id, client_secret, protocol)
+            self._connect(client_app_id, client_id, client_secret, protocol)
         except (TypeError, ValueError) as e:
             logger.warning("O365Connection: Couldn't authenticate %s" % e)
 
-    def _get_auth_info(self, client_id_key: str, client_secret_key: str):
-        if not settings.O365_ADMIN_SETTINGS:
-            raise Exception("O365_ADMIN_SETTINGS configuration missing.")
+    def _get_auth_info(
+        self, client_app_id: str, client_id_key: str, client_secret_key: str
+    ):
+        selected_settings = (
+            settings.O365_CLIENT_APP_SETTINGS.get(client_app_id, {})
+            if client_app_id
+            else settings.O365_ADMIN_SETTINGS
+        )
+        if not selected_settings:
+            raise ValueError("Selected settings not yet set!")
 
-        client_id = settings.O365_ADMIN_SETTINGS.get(client_id_key, "")
+        client_id = selected_settings.get(client_id_key, "")
         if not client_id:
-            raise Exception(f"O365_ADMIN_SETTINGS.{client_id_key} not set! ")
+            raise ValueError(f"{client_app_id}.{client_id_key} not set! ")
 
-        client_secret = settings.O365_ADMIN_SETTINGS.get(client_secret_key, "")
+        client_secret = selected_settings.get(client_secret_key, "")
         if not client_secret:
-            raise Exception(f"O365_ADMIN_SETTINGS.{client_secret_key} not set!")
+            raise ValueError(f"{client_app_id}.{client_secret_key} not set!")
 
         return client_id, client_secret
+
+    def _get_token_backend(
+        self, client_app_id: str | None = None
+    ) -> BaseTokenBackend | None:
+        selected_settings = (
+            settings.O365_CLIENT_APP_SETTINGS.get(client_app_id, {})
+            if client_app_id
+            else settings.O365_ADMIN_SETTINGS
+        )
+        if not selected_settings:
+            raise ValueError("Selected settings not yet set!")
+
+        token_backend = selected_settings.get("TOKEN_BACKEND", "FileSystemTokenBackend")
+        backend_settings = settings.O365_TOKEN_BACKENDS.get(token_backend, {})
+
+        if "FileSystemTokenBackend" == token_backend:
+            return FileSystemTokenBackend(
+                token_path=backend_settings.get("O365_AUTH_BACKEND_TOKEN_DIR", "."),
+                token_filename=backend_settings.get("O365_AUTH_BACKEND_TOKEN_FILE"),
+            )
+
+        if "AZBlobStorageTokenBackend" == token_backend:
+            return AZBlobStorageTokenBackend(
+                connection_str=backend_settings.get(
+                    "O365_AUTH_BACKEND_AZ_CONNECTION_STR"
+                ),
+                container_name=backend_settings.get(
+                    "O365_AUTH_BACKEND_AZ_CONTAINER_PATH"
+                ),
+                blob_name=self._decorate_token_name(),
+            )
+        return None
 
     def _decorate_token_name(self):
         bname = settings.O365_ADMIN_SETTINGS.get(
@@ -63,31 +114,23 @@ class O365Connection:
         return "{}/{}".format(
             hashlib.sha1(
                 settings.O365_ADMIN_SETTINGS.get("O365_CLIENT_ID").encode("utf-8")
-                + bname.encode("utf-8")
+                + self.from_email.encode("utf-8")
             ).hexdigest(),
             bname,
         )
 
-    def _connect(self, client_id, client_secret, protocol) -> None:
+    def _connect(self, client_app_id, client_id, client_secret, protocol) -> None:
         # connect_id/ and secret should have been already setup
         # for offline & message_all scopes, for on behalf of user access.
         protocol_selected = (
             MSGraphProtocol(api_version="beta")
-            if protocol == self.o365_protocol
+            if protocol == self.O365_PROTOCOL
             else None
         )
         if not protocol_selected:
-            raise Exception(f"Unsupported protocol {protocol}")
+            raise ValueError(f"Unsupported protocol {protocol}")
 
-        token_backend = AzureTokenBackend(
-            connection_str=settings.O365_ADMIN_SETTINGS.get(
-                "O365_AUTH_BACKEND_AZ_CONNECTION_STR"
-            ),
-            container_name=settings.O365_ADMIN_SETTINGS.get(
-                "O365_AUTH_BACKEND_AZ_CONTAINER_PATH"
-            ),
-            blob_name=self._decorate_token_name(),
-        )
+        token_backend = self._get_token_backend(client_app_id=client_app_id)
 
         self.account = Account(
             credentials=(client_id, client_secret),
@@ -95,10 +138,6 @@ class O365Connection:
             scopes=["offline_access", "message_all"],
             token_backend=token_backend,
         )
-
-        if not self.account.is_authenticated:
-            logger.info("Hold on .... going for authentication!")
-            self.account.authenticate()
 
     def _get_message_by_id(
         self, mailbox: MailBox, message_id: str, folder_name="Inbox"
@@ -141,6 +180,12 @@ class O365Connection:
 
     def send_messages(self, email_messages, fail_silently: bool = False) -> int:
         sent_messages = 0
+        if not self.account.is_authenticated:
+            logger.error("send_messages unavailable; account not authenticated!")
+            raise O365NotAuthenticated(
+                "get_messages unavailable; account not yet authenticated!"
+            )
+
         mailbox = self.account.mailbox(self.from_email)
         for msg in email_messages:
             try:
@@ -174,7 +219,9 @@ class O365Connection:
     def get_messages(self, owner_email: str, last_polled: datetime, condition):
         if not self.account.is_authenticated:
             logger.error("get_messages unavailable; account not authenticated!")
-            return
+            raise O365NotAuthenticated(
+                "get_messages unavailable; account not yet authenticated!"
+            )
         mailbox = self.account.mailbox(owner_email)
         mail_folder = mailbox.get_folder(folder_name="Inbox")
         qstr = ""
@@ -187,8 +234,8 @@ class O365Connection:
             yield (mail.get_mime_content())
 
 
-class AzureTokenBackend(BaseTokenBackend):
-    """An Azure Blob backend to store tokens"""
+class AZBlobStorageTokenBackend(BaseTokenBackend):
+    """An Azure Blob store backend for token management"""
 
     def __init__(self, connection_str, container_name, blob_name):
         """
@@ -202,7 +249,7 @@ class AzureTokenBackend(BaseTokenBackend):
         try:
             from azure.storage.blob import BlobClient
         except ModuleNotFoundError as e:
-            raise Exception(
+            raise ModuleNotFoundError(
                 "Please install the azure-storage-blob package to use this token backend."
             ) from e
         super().__init__()
@@ -246,7 +293,9 @@ class AzureTokenBackend(BaseTokenBackend):
             raise ValueError('You have to set the "token" first.')
 
         try:
-            r = self._client.upload_blob(self.serializer.dumps(self.token))
+            r = self._client.upload_blob(
+                self.serializer.dumps(self.token), overwrite=True
+            )
         except Exception as e:
             logger.error("Token secret could not be created: {}".format(e))
             return False

@@ -123,10 +123,10 @@ class Mailbox(models.Model):
                 "<br />"
                 "Be sure to urlencode your username and password should they "
                 "contain illegal characters (like @, :, etc)."
-                "<br />"
-                "For MS-365 email accounts use: <pre>office365:username@example.com:/?"
-                "client_id=<client_id>&client_secret=<client_secret>&</pre>"
-                "supports only on-behalf-of-a-user; thus requires user's auth & consent"
+                "<br /><br />"
+                "For Office 365 email accounts use: 'office365:username@example.com:/?"
+                "client_id_key=<client_id_key>&client_secret_key=<client_secret_key>&client_app_id=<client_app_id_str>', provide either of client_app_id or client_id_key/client_secret_key pair; client_app_id overrides when both are provided"
+                "<br />supports only on-behalf-of-a-user; thus requires user's auth & consent in a separate authentication flow via console/ or web-browser."
                 "<br />"
             )
         ),
@@ -280,11 +280,12 @@ class Mailbox(models.Model):
                 archive=self.archive,
             )
             conn.connect(self.username, self.password)
-        elif self.type == O365Transport.scheme:  #'office365'
+        elif self.type == O365Transport.SCHEME:  #'office365'
             conn = O365Transport(
                 owner_email=self.from_email, last_polled=self.last_polling
             )
             conn.connect(
+                client_app_id=self._query_string.get("client_app_id", [""])[0],
                 client_id_key=self._query_string.get("client_id_key", [""])[0],
                 client_secret_key=self._query_string.get("client_secret_key", [""])[0],
             )

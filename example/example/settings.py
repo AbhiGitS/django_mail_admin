@@ -11,7 +11,6 @@ https://docs.djangoproject.com/en/1.9/ref/settings/
 """
 
 import os
-import sys
 from decouple import config
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
@@ -39,6 +38,7 @@ INSTALLED_APPS = [
     "django_mail_admin",
     # if your app has other dependencies that need to be added to the site
     # they should be added here
+    "sslserver",
 ]
 
 MIDDLEWARE = [
@@ -123,8 +123,7 @@ INSTALLED_APPS += ("django_admin_row_actions",)
 EMAIL_BACKEND = "django_mail_admin.backends.O365Backend"
 
 O365_ADMIN_SETTINGS = {
-    "O365_AUTH_BACKEND_TOKEN_DIR": config("O365_AUTH_BACKEND_TOKEN_DIR"),
-    "O365_AUTH_BACKEND_TOKEN_FILE": config("O365_AUTH_BACKEND_TOKEN_FILE"),
+    "TOKEN_BACKEND": "AZBlobStorageTokenBackend",  # "FileSystemTokenBackend"
     "O365_CLIENT_ID": config("O365_CLIENT_ID"),
     "O365_CLIENT_SECRET": config("O365_CLIENT_SECRET"),
     "O365_AUTH_BACKEND_AZ_BLOB_NAME": config("O365_AUTH_BACKEND_AZ_BLOB_NAME"),
@@ -134,4 +133,30 @@ O365_ADMIN_SETTINGS = {
     "O365_AUTH_BACKEND_AZ_CONTAINER_PATH": config(
         "O365_AUTH_BACKEND_AZ_CONTAINER_PATH"
     ),
+}
+
+O365_CLIENT_APP_SETTINGS = {
+    "example_client_app1": {
+        # TBD certificate support
+        "auth": "token_secret",  #'certificate'
+        "TOKEN_BACKEND": "AZBlobStorageTokenBackend",
+        "O365_CLIENT_ID": config("O365_CLIENT_ID"),
+        "O365_CLIENT_SECRET": config("O365_CLIENT_SECRET"),
+    },
+}
+
+O365_TOKEN_BACKENDS = {
+    "FileSystemTokenBackend": {
+        "O365_AUTH_BACKEND_TOKEN_DIR": config("O365_AUTH_BACKEND_TOKEN_DIR"),
+        "O365_AUTH_BACKEND_TOKEN_FILE": config("O365_AUTH_BACKEND_TOKEN_FILE"),
+    },
+    "AZBlobStorageTokenBackend": {
+        "O365_AUTH_BACKEND_AZ_BLOB_NAME": config("O365_AUTH_BACKEND_AZ_BLOB_NAME"),
+        "O365_AUTH_BACKEND_AZ_CONTAINER_PATH": config(
+            "O365_AUTH_BACKEND_AZ_CONTAINER_PATH"
+        ),
+        "O365_AUTH_BACKEND_AZ_CONNECTION_STR": config(
+            "O365_AUTH_BACKEND_AZ_CONNECTION_STR"
+        ),
+    },
 }

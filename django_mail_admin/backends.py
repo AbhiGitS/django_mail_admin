@@ -96,8 +96,6 @@ class O365Backend(BaseEmailBackend):
     Backend to handle sending emails via o365 connection
     """
 
-    scheme = O365Connection.scheme  # "office365"
-
     def __init__(self, fail_silently: bool = False, **kwargs) -> None:
         super().__init__(fail_silently, **kwargs)
         self.conn: O365Connection = None
@@ -121,16 +119,18 @@ class O365Backend(BaseEmailBackend):
 
         self.connection = None
         parseresult = parse.urlparse(configuration.email_host)
-        if not self.scheme == parseresult.scheme.lower():
+        if not O365Connection.SCHEME == parseresult.scheme.lower():
             raise ValueError(
-                f'Invalid EMAIL_HOST scheme, expected "{self.scheme}", got "{parseresult.scheme}"'
+                f'Invalid EMAIL_HOST scheme, expected "{O365Connection.SCHEME}", got "{parseresult.scheme}"'
             )
         query_dict = dict(parse.parse_qsl(parseresult.query))
+        client_app_id = query_dict.get("client_app_id", "")
         client_id_key = query_dict.get("client_id_key", "")
         client_secret_key = query_dict.get("client_secret_key", "")
 
         self.conn = O365Connection(
             from_email=self.from_email,
+            client_app_id=client_app_id,
             client_id_key=client_id_key,
             client_secret_key=client_secret_key,
         )
