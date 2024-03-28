@@ -76,7 +76,7 @@ class O365Connection:
         return client_id, client_secret
 
     def _get_token_backend(
-        self, client_app_id: str | None = None
+        self, client_app_id: str | None = None, client_id: str | None = None
     ) -> BaseTokenBackend | None:
         selected_settings = (
             settings.O365_CLIENT_APP_SETTINGS.get(client_app_id, {})
@@ -92,7 +92,12 @@ class O365Connection:
         if "FileSystemTokenBackend" == token_backend:
             return FileSystemTokenBackend(
                 token_path=backend_settings.get("O365_AUTH_BACKEND_TOKEN_DIR", "."),
-                token_filename=backend_settings.get("O365_AUTH_BACKEND_TOKEN_FILE"),
+                token_filename=self._decorate_token_name(
+                    client_id,
+                    token_name_pattern=backend_settings.get(
+                        "O365_AUTH_BACKEND_TOKEN_FILE"
+                    ),
+                ),
             )
 
         if "AZBlobStorageTokenBackend" == token_backend:
@@ -103,20 +108,23 @@ class O365Connection:
                 container_name=backend_settings.get(
                     "O365_AUTH_BACKEND_AZ_CONTAINER_PATH"
                 ),
-                blob_name=self._decorate_token_name(),
+                blob_name=self._decorate_token_name(
+                    client_id,
+                    token_name_pattern=settings.O365_ADMIN_SETTINGS.get(
+                        "O365_AUTH_BACKEND_AZ_BLOB_NAME"
+                    ),
+                ),
             )
         return None
 
-    def _decorate_token_name(self):
-        bname = settings.O365_ADMIN_SETTINGS.get(
-            "O365_AUTH_BACKEND_AZ_BLOB_NAME", "o365_token.txt"
-        )
+    def _decorate_token_name(self, client_id: str, token_name_pattern: str | None):
+        if not token_name_pattern:
+            token_name_pattern = "o365_token.txt"
         return "{}/{}".format(
             hashlib.sha1(
-                settings.O365_ADMIN_SETTINGS.get("O365_CLIENT_ID").encode("utf-8")
-                + self.from_email.encode("utf-8")
+                client_id.encode("utf-8") + self.from_email.encode("utf-8")
             ).hexdigest(),
-            bname,
+            token_name_pattern,
         )
 
     def _connect(self, client_app_id, client_id, client_secret, protocol) -> None:
@@ -130,7 +138,9 @@ class O365Connection:
         if not protocol_selected:
             raise ValueError(f"Unsupported protocol {protocol}")
 
-        token_backend = self._get_token_backend(client_app_id=client_app_id)
+        token_backend = self._get_token_backend(
+            client_app_id=client_app_id, client_id=client_id
+        )
 
         self.account = Account(
             credentials=(client_id, client_secret),
@@ -182,10 +192,10 @@ class O365Connection:
         sent_messages = 0
         if not self.account.is_authenticated:
             logger.error("send_messages unavailable; account not authenticated!")
-            raise O365NotAuthenticated(
-                "get_messages unavailable; account not yet authenticated!"
-            )
-
+            if not fail_silently:
+                raise O365NotAuthenticated(
+                    "get_messages unavailable; account not yet authenticated!"
+                )
         mailbox = self.account.mailbox(self.from_email)
         for msg in email_messages:
             try:

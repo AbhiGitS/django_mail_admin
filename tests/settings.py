@@ -48,7 +48,7 @@ DJANGO_MAIL_ADMIN = {
 }
 
 O365_ADMIN_SETTINGS = {
-    "TOKEN_BACKEND": "FileSystemTokenBackend",
+    "TOKEN_BACKEND": "AZBlobStorageTokenBackend",
     "O365_CLIENT_ID": config("O365_CLIENT_ID"),
     "O365_CLIENT_SECRET": config("O365_CLIENT_SECRET"),
     "O365_AUTH_BACKEND_AZ_BLOB_NAME": config("O365_AUTH_BACKEND_AZ_BLOB_NAME"),
@@ -73,13 +73,25 @@ O365_TOKEN_BACKENDS = {
         "O365_AUTH_BACKEND_TOKEN_DIR": config("O365_AUTH_BACKEND_TOKEN_DIR"),
         "O365_AUTH_BACKEND_TOKEN_FILE": config("O365_AUTH_BACKEND_TOKEN_FILE"),
     },
+    "AZBlobStorageTokenBackend": {
+        "O365_AUTH_BACKEND_AZ_BLOB_NAME": config("O365_AUTH_BACKEND_AZ_BLOB_NAME"),
+        "O365_AUTH_BACKEND_AZ_CONTAINER_PATH": config(
+            "O365_AUTH_BACKEND_AZ_CONTAINER_PATH"
+        ),
+        "O365_AUTH_BACKEND_AZ_CONNECTION_STR": config(
+            "O365_AUTH_BACKEND_AZ_CONNECTION_STR"
+        ),
+    },
 }
 
 O365_MAILBOXES = {
     "TestUser1": {"email": "test_user@test.com", "webapp": "test_webapp1"},
 }
 
-O365_TEST_ACCOUNT = config("O365_TEST_ACCOUNT")
+O365_TEST_ADMIN = {
+    "test_from_email": config("O365_TEST_FROM_ACCOUNT"),
+    "test_to_email": config("O365_TEST_TO_ACCOUNT"),
+}
 
 TEMPLATES = [
     {
