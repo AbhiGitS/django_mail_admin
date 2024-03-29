@@ -120,13 +120,13 @@ class Mailbox(models.Model):
                 "Internet transports include 'imap' and 'pop3'; "
                 "common local file transports include 'maildir', 'mbox', "
                 "and less commonly 'babyl', 'mh', and 'mmdf'. <br />"
+                "<br /><br />"
+                "For Office 365 email accounts use: 'office365:username@example.com:/?"
+                "client_id_key=<client_id_key>&client_secret_key=<client_secret_key>&client_app_id=<client_app_id_str>'. Default values of client_id_key and client_secret_key are 'O365_CLIENT_ID', and 'O365_CLIENT_SECRET'. When all 3 are provided it will lookup client_id_key/secret_key values from client_app_id configuration."
+                "<br />supports only on-behalf-of-a-user; thus requires user's auth & consent in a separate authentication flow via console/ or web-browser."
                 "<br />"
                 "Be sure to urlencode your username and password should they "
                 "contain illegal characters (like @, :, etc)."
-                "<br /><br />"
-                "For Office 365 email accounts use: 'office365:username@example.com:/?"
-                "client_id_key=<client_id_key>&client_secret_key=<client_secret_key>&client_app_id=<client_app_id_str>', provide either of client_app_id or client_id_key/client_secret_key pair; client_app_id overrides when both are provided"
-                "<br />supports only on-behalf-of-a-user; thus requires user's auth & consent in a separate authentication flow via console/ or web-browser."
                 "<br />"
             )
         ),

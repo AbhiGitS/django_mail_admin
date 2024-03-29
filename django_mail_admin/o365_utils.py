@@ -3,6 +3,7 @@ Helper utility classes/ functions for O365 support
 """
 import logging
 import hashlib
+from typing import Optional
 
 from base64 import b64encode
 from datetime import datetime
@@ -76,8 +77,8 @@ class O365Connection:
         return client_id, client_secret
 
     def _get_token_backend(
-        self, client_app_id: str | None = None, client_id: str | None = None
-    ) -> BaseTokenBackend | None:
+        self, client_app_id: str = None, client_id: str = None
+    ) -> Optional[object]:
         selected_settings = (
             settings.O365_CLIENT_APP_SETTINGS.get(client_app_id, {})
             if client_app_id
@@ -117,7 +118,7 @@ class O365Connection:
             )
         return None
 
-    def _decorate_token_name(self, client_id: str, token_name_pattern: str | None):
+    def _decorate_token_name(self, client_id: str, token_name_pattern: Optional[str]):
         if not token_name_pattern:
             token_name_pattern = "o365_token.txt"
         return "{}/{}".format(
@@ -151,7 +152,7 @@ class O365Connection:
 
     def _get_message_by_id(
         self, mailbox: MailBox, message_id: str, folder_name="Inbox"
-    ) -> Message | None:
+    ) -> Optional[Message]:
         """retrieve message by id from given mailbox"""
         if not message_id:
             return None
@@ -164,7 +165,7 @@ class O365Connection:
 
     def _get_reply_to_message(
         self, mailbox: MailBox, msg: EmailMessage
-    ) -> Message | None:
+    ) -> Optional[Message]:
         """retrieve message representing in-reply-to id in msg headers"""
         if not msg or not msg.extra_headers or not mailbox:
             return None
