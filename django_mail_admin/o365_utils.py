@@ -64,7 +64,12 @@ class O365Connection:
             else settings.O365_ADMIN_SETTINGS
         )
         if not selected_settings:
-            raise ValueError("Selected settings not yet set!")
+            if client_app_id:
+                raise ValueError(
+                    f"Settings not found for client_app_id: '{client_app_id}'"
+                )
+            else:
+                raise ValueError(f"O365_ADMIN_SETTINGS not defined!")
 
         client_id = selected_settings.get(client_id_key, "")
         if not client_id:
