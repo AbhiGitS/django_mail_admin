@@ -123,6 +123,10 @@ INSTALLED_APPS += ("django_admin_row_actions",)
 EMAIL_BACKEND = "django_mail_admin.backends.O365Backend"
 
 O365_ADMIN_SETTINGS = {
+    "TOKEN_BACKEND": "FileSystemTokenBackend",  # "AZBlobStorageTokenBackend"
+}
+
+EXAMPLE_O365_ADMIN_SETTINGS = {
     "TOKEN_BACKEND": "AZBlobStorageTokenBackend",  # "FileSystemTokenBackend"
     "O365_CLIENT_ID": config("O365_CLIENT_ID"),
     "O365_CLIENT_SECRET": config("O365_CLIENT_SECRET"),

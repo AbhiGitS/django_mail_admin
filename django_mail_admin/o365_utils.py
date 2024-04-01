@@ -64,7 +64,12 @@ class O365Connection:
             else settings.O365_ADMIN_SETTINGS
         )
         if not selected_settings:
-            raise ValueError("Selected settings not yet set!")
+            if client_app_id:
+                raise ValueError(
+                    f"Settings not found for client_app_id: '{client_app_id}'"
+                )
+            else:
+                raise ValueError(f"O365_ADMIN_SETTINGS not defined!")
 
         client_id = selected_settings.get(client_id_key, "")
         if not client_id:
@@ -111,7 +116,7 @@ class O365Connection:
                 ),
                 blob_name=self._decorate_token_name(
                     client_id,
-                    token_name_pattern=settings.O365_ADMIN_SETTINGS.get(
+                    token_name_pattern=backend_settings.get(
                         "O365_AUTH_BACKEND_AZ_BLOB_NAME"
                     ),
                 ),
@@ -191,7 +196,7 @@ class O365Connection:
 
     def send_messages(self, email_messages, fail_silently: bool = False) -> int:
         sent_messages = 0
-        if not self.account.is_authenticated:
+        if not (self.account and self.account.is_authenticated):
             logger.error("send_messages unavailable; account not authenticated!")
             if not fail_silently:
                 raise O365NotAuthenticated(
@@ -228,7 +233,7 @@ class O365Connection:
         return sent_messages
 
     def get_messages(self, owner_email: str, last_polled: datetime, condition):
-        if not self.account.is_authenticated:
+        if not (self.account and self.account.is_authenticated):
             logger.error("get_messages unavailable; account not authenticated!")
             raise O365NotAuthenticated(
                 "get_messages unavailable; account not yet authenticated!"
@@ -255,6 +260,12 @@ class AZBlobStorageTokenBackend(BaseTokenBackend):
         :param str container_name: Container string for blob file.
         :param str blob_name: Blob name
         """
+        if not (connection_str and container_name and blob_name):
+            raise ValueError(
+                "At least one required inputs is empty! "
+                + f"connection_str:'{connection_str}', container_name:'{container_name}', blob_name:'{blob_name}'"
+            )
+
         self.container_name = container_name
         self.blob_name = blob_name
         try:
