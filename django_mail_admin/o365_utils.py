@@ -111,7 +111,7 @@ class O365Connection:
                 ),
                 blob_name=self._decorate_token_name(
                     client_id,
-                    token_name_pattern=settings.O365_ADMIN_SETTINGS.get(
+                    token_name_pattern=backend_settings.get(
                         "O365_AUTH_BACKEND_AZ_BLOB_NAME"
                     ),
                 ),
@@ -255,6 +255,12 @@ class AZBlobStorageTokenBackend(BaseTokenBackend):
         :param str container_name: Container string for blob file.
         :param str blob_name: Blob name
         """
+        if not (connection_str and container_name and blob_name):
+            raise ValueError(
+                "At least one required inputs is empty! "
+                + f"connection_str:'{connection_str}', container_name:'{container_name}', blob_name:'{blob_name}'"
+            )
+
         self.container_name = container_name
         self.blob_name = blob_name
         try:

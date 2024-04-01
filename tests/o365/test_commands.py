@@ -60,7 +60,7 @@ class O365CommandTest(TestCase):
         to_user_email = settings.O365_TEST_ADMIN.get("test_to_email", from_user_email)
 
         from_user_email_str = parse.quote(from_user_email)
-        from_user_o365_con = f"office365://{from_user_email_str}@outlook.office365.com?client_id_key=O365_CLIENT_ID&client_secret_key=O365_CLIENT_SECRET&archive=Archived"
+        from_user_o365_con = f"office365://{from_user_email_str}@outlook.office365.com?client_app_id=test_webapp1"
 
         Outbox.objects.create(
             name="O365CommandTest_Outbox",
@@ -86,7 +86,7 @@ class O365CommandTest(TestCase):
         )
 
         to_user_email_str = parse.quote(to_user_email)
-        to_user_o365_con = f"office365://{to_user_email_str}@outlook.office365.com?client_id_key=O365_CLIENT_ID&client_secret_key=O365_CLIENT_SECRET&archive=Archived"
+        to_user_o365_con = f"office365://{to_user_email_str}@outlook.office365.com?client_app_id=test_webapp1"
 
         inbox = Mailbox.objects.create(
             name="O365CommandTest_Inbox", uri=to_user_o365_con, from_email=to_user_email
