@@ -191,7 +191,7 @@ class O365Connection:
 
     def send_messages(self, email_messages, fail_silently: bool = False) -> int:
         sent_messages = 0
-        if not self.account.is_authenticated:
+        if not (self.account and self.account.is_authenticated):
             logger.error("send_messages unavailable; account not authenticated!")
             if not fail_silently:
                 raise O365NotAuthenticated(
@@ -228,7 +228,7 @@ class O365Connection:
         return sent_messages
 
     def get_messages(self, owner_email: str, last_polled: datetime, condition):
-        if not self.account.is_authenticated:
+        if not (self.account and self.account.is_authenticated):
             logger.error("get_messages unavailable; account not authenticated!")
             raise O365NotAuthenticated(
                 "get_messages unavailable; account not yet authenticated!"
