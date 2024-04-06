@@ -8,7 +8,7 @@ from typing import Optional
 from base64 import b64encode
 from datetime import datetime
 from django.conf import settings
-from django.core.mail.message import EmailMessage
+from django.core.mail.message import EmailMessage, EmailMultiAlternatives
 
 from O365.utils import BaseTokenBackend
 
@@ -194,6 +194,14 @@ class O365Connection:
         ).decode("utf-8")
         return {"name": f"{attachment[0]}", "content": b64content, "on_disk": False}
 
+    def _get_html_body(self, msg) -> Optional[str]:
+        if isinstance(msg, EmailMultiAlternatives):
+            for msg_alt in msg.alternatives:
+                alt_content, alt_content_type = msg_alt
+                if "text/html" == alt_content_type:
+                    return alt_content
+        return None
+
     def send_messages(self, email_messages, fail_silently: bool = False) -> int:
         sent_messages = 0
         if not (self.account and self.account.is_authenticated):
@@ -210,7 +218,8 @@ class O365Connection:
                 m.cc.add(msg.cc)
                 m.bcc.add(msg.bcc)
                 m.reply_to.add(msg.reply_to)
-                m.body = msg.body
+                html_body = self._get_html_body(msg)
+                m.body = msg.body if not html_body else html_body
                 if msg.subject:
                     m.subject = msg.subject
                 m.save_message()
