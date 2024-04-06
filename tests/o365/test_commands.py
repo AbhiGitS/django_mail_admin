@@ -6,7 +6,7 @@ from datetime import datetime
 
 from django.test import TestCase
 from django.conf import settings
-from django.core.management import call_command
+from django.template.loader import render_to_string
 
 from django_mail_admin.models import Outbox, IncomingEmail, OutgoingEmail, STATUS
 from django_mail_admin.models import Mailbox
@@ -22,6 +22,19 @@ class O365CommandTest(TestCase):
     def print_incoming_emails(self):
         for email in IncomingEmail.objects.all().order_by("processed"):
             print(f"{email.message_id} | {email.subject} | {email.processed}")
+
+    def _get_html_draft(
+        self,
+        text_body: str,
+        message_hash: str,
+        legal_disclaimer="This is a test legal disclaimer",
+    ):
+        context = {
+            "bodylines": text_body.splitlines(),
+            "message_hash": message_hash,
+            "legal_disclaimer": legal_disclaimer,
+        }
+        return render_to_string("html_email_draft.html", context)
 
     def send_email(self, outgoing_email) -> bool:
         retry_send = False
@@ -71,19 +84,27 @@ class O365CommandTest(TestCase):
         )
 
         test_subject = f"UnitTest Subject Dated {datetime.now()}"
-        test_body = f"UnitTest Body Random {random.random()}"
+        message_hash = random.random()
+        # do not use '\n' sequence in test body, the returning email will collapse all new line sequences to a single space
+        text_body = f"UnitTest Body. Line1 Hi\nLine2 This is a test draft"
+        test_body = f"{text_body}\n{message_hash}"
+        test_html_body = self._get_html_draft(text_body, message_hash)
         """
         print(f"\ntest_subject: {test_subject}")
         print(f"test_body: {test_body}\n")
         """
-        outgoing_email = OutgoingEmail.objects.create(
-            from_email=from_user_email,
-            to=[to_user_email],
-            status=STATUS.queued,
-            subject=test_subject,
-            message=test_body,
-            backend_alias=self.O365_BACKEND_ALIAS,
-        )
+        outgoing_emails = []
+        for tst_body in [test_body, test_html_body]:
+            outgoing_emails.append(
+                OutgoingEmail.objects.create(
+                    from_email=from_user_email,
+                    to=[to_user_email],
+                    status=STATUS.queued,
+                    subject=test_subject,
+                    message=tst_body,
+                    backend_alias=self.O365_BACKEND_ALIAS,
+                )
+            )
 
         to_user_email_str = parse.quote(to_user_email)
         to_user_o365_con = f"office365://{to_user_email_str}@outlook.office365.com?client_app_id=test_webapp1"
@@ -96,8 +117,9 @@ class O365CommandTest(TestCase):
         print(f"received {len(new_emails)} new emails")
         # time.sleep(10)
 
-        # send new email from user1 to user2
-        send_successful = self.send_email(outgoing_email)
+        # send new email(s) from user1 to user2
+        for outgoing_email in outgoing_emails:
+            send_successful = self.send_email(outgoing_email)
 
         assert send_successful == True
         # sleep for sync
@@ -105,17 +127,25 @@ class O365CommandTest(TestCase):
 
         # get inbox emails for user2 hoping to have received the recently sent email.
         max_attempts = 3
-        latest_email = None
         # if the recent attempt did not succeed in receiving the new email, try again for max_attempts times to fetch new emails.
+        latest_emails = []
         while max_attempts:
             max_attempts -= 1
             time.sleep(2)
             new_emails = inbox.get_new_mail()
             print(f"received {len(new_emails)} new emails")
-            latest_email = new_emails[0] if new_emails else None
-            if latest_email:
+            latest_emails.extend(new_emails)
+            if len(latest_emails) == 2:
                 break
-            print(f"\tNo new mails; retry attempts remaining {max_attempts}")
-        assert latest_email
-        assert latest_email.subject == test_subject
-        assert latest_email.text == test_body
+            print(
+                f"\tContinue seeking new mails; retry attempts remaining {max_attempts}"
+            )
+
+        assert latest_emails
+        test_body_wo_newlines = test_body.replace("\n", " ")
+        for latest_email in latest_emails:
+            assert latest_email.subject == test_subject
+            body_matches = (latest_email.text == test_body_wo_newlines) or (
+                str(message_hash) in latest_email.html
+            )
+            assert body_matches
