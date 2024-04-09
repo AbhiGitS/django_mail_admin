@@ -28,6 +28,7 @@ class O365Connection:
     O365_PROTOCOL = "MSGraphProtocol"
     DEFAULT_CLIENT_ID_KEY = "O365_CLIENT_ID"
     DEFAULT_CLIENT_SECRET_KEY = "O365_CLIENT_SECRET"
+    MESSAGE_ID_KEY = "Message-ID"
 
     def __init__(
         self,
@@ -202,6 +203,24 @@ class O365Connection:
                     return alt_content
         return None
 
+    def _update_message_id_header(
+        self, msg: EmailMessage, internet_message_id: str
+    ) -> bool:
+        """add internet message-id of external email message to EmailMessage.extra_headers
+
+        Ensure this is called after the outbound message has had a chance to have an internet message id, e.g. when a message draft is saved in the mail-server.
+
+        This helps mail-admin to associate the OutgoingEmail to the internet-message-id, and tie any replies to the external email back to this OutgoingEmail.
+        """
+        if not msg or not internet_message_id:
+            return False
+        msg.extra_headers.update(
+            {
+                self.MESSAGE_ID_KEY: internet_message_id,
+            }
+        )
+        return True
+
     def send_messages(self, email_messages, fail_silently: bool = False) -> int:
         sent_messages = 0
         if not (self.account and self.account.is_authenticated):
@@ -223,6 +242,7 @@ class O365Connection:
                 if msg.subject:
                     m.subject = msg.subject
                 m.save_message()
+                self._update_message_id_header(msg, m.internet_message_id)
                 m.attachments.add(
                     [
                         self._prepare_attachment_for_dispatch(attachment)
