@@ -177,6 +177,7 @@ class OutgoingEmail(models.Model):
             if not self.headers:
                 self.headers = {}
             self.headers.update({"Message-ID": internet_message_id})
+            self.save(update_fields=["headers"])
             retval = True
         return retval
 
