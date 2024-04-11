@@ -41,7 +41,7 @@ class O365CommandTest(TestCase):
         send_successful = False
         while True:
             try:
-                outgoing_email.dispatch(commit=False)
+                outgoing_email.dispatch(commit=True)
             except O365NotAuthenticated as uae:
                 connection = connections[self.O365_BACKEND_ALIAS]
                 print(f"warning: send_mail: {uae};")

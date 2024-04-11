@@ -426,7 +426,7 @@ class Mailbox(models.Model):
                 in_reply_to = message["in-reply-to"].strip()
                 # Hack to work with db-independent JSONField (which is interpreted as string in db)
                 msg.in_reply_to = OutgoingEmail.objects.filter(
-                    headers__contains='"Message-ID":"'
+                    headers__contains='"Message-ID": "'
                     + message["in-reply-to"].strip()
                     + '"'
                 )[0]
