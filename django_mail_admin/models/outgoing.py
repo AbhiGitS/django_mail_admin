@@ -73,15 +73,6 @@ class OutgoingEmail(models.Model):
     )
     headers = JSONField(_("Headers"), blank=True, null=True)
 
-    message_id = models.CharField(
-        _("OutgoingEmail ID"),
-        max_length=255,
-        blank=True,
-        null=True,
-        default=None,
-        help_text=_("Internet Message-ID for outgoing draft/email"),
-    )
-
     status = models.PositiveSmallIntegerField(
         _("Status"), choices=STATUS_CHOICES, db_index=True, blank=True, null=True
     )
@@ -183,7 +174,9 @@ class OutgoingEmail(models.Model):
             "Message-ID", None
         )
         if internet_message_id:
-            self.message_id = internet_message_id
+            if not self.headers:
+                self.headers = {}
+            self.headers.update({"Message-ID": internet_message_id})
             retval = True
         return retval
 
@@ -191,7 +184,6 @@ class OutgoingEmail(models.Model):
         """
         Sends email and log the result.
         """
-
         email_message = None
         # Priority is handled in mail.send
         try:

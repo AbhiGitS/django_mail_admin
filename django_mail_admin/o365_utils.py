@@ -203,6 +203,18 @@ class O365Connection:
                     return alt_content
         return None
 
+    def _get_draft_message_id(
+        self,
+        mailbox: MailBox,
+        object_id: str,
+    ) -> Optional[str]:
+        """helper to get internet_message_id from the saved draft of given object_id message."""
+        draft_folder = mailbox.get_folder(folder_name="Drafts")
+        if not draft_folder:
+            return None
+        dm = draft_folder.get_message(object_id=object_id, download_attachments=False)
+        return dm.internet_message_id if dm else None
+
     def _update_message_id_header(
         self, msg: EmailMessage, internet_message_id: str
     ) -> bool:
@@ -242,7 +254,6 @@ class O365Connection:
                 if msg.subject:
                     m.subject = msg.subject
                 m.save_message()
-                self._update_message_id_header(msg, m.internet_message_id)
                 m.attachments.add(
                     [
                         self._prepare_attachment_for_dispatch(attachment)
@@ -253,6 +264,14 @@ class O365Connection:
                     # workaround: avoid NoneType compare w/ int, O365 exception
                     attachment.size = len(attachment.content)
                 m.save_draft()
+                self._update_message_id_header(
+                    msg,
+                    m.internet_message_id
+                    if m.internet_message_id
+                    else self._get_draft_message_id(
+                        mailbox=mailbox, object_id=m.object_id
+                    ),
+                )
                 m.send()
                 sent_messages += 1
             except Exception as e:
