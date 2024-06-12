@@ -32,6 +32,7 @@ urlpatterns = [
         name="mailbox_auth_step1",
     ),
     path(r"example/mailbox/auth2", views.mailbox_auth_step2, name="mailbox_auth_step2"),
+    re_path(r"^example/", include("social_django.urls", namespace="social")),
 ]
 if settings.DEBUG:
     # static files (images, css, javascript, etc.)

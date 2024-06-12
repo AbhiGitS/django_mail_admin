@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     # if your app has other dependencies that need to be added to the site
     # they should be added here
     "sslserver",
+    "social_django",
 ]
 
 MIDDLEWARE = [
@@ -66,6 +67,8 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "social_django.context_processors.backends",
+                "social_django.context_processors.login_redirect",
             ],
         },
     },
@@ -120,7 +123,36 @@ USE_TZ = True
 STATIC_URL = "/static/"
 MEDIA_URL = "/media/"
 INSTALLED_APPS += ("django_admin_row_actions",)
-EMAIL_BACKEND = "django_mail_admin.backends.O365Backend"
+
+DJANGO_MAIL_ADMIN = {
+    "BACKENDS": {
+        "default": "django_mail_admin.backends.GmailOAuth2Backend",  #'django_mail_admin.backends.CustomEmailBackend',
+        "smtp": "django.core.mail.backends.smtp.EmailBackend",
+        "o365": "django_mail_admin.backends.O365Backend",
+        "gmail": "django_mail_admin.backends.GmailOAuth2Backend",
+    }
+}
+AUTHENTICATION_BACKENDS = (
+    "social_core.backends.google.GoogleOAuth2",
+    "django.contrib.auth.backends.ModelBackend",
+)
+
+SOCIAL_AUTH_GOOGLE_OAUTH2 = "abc"
+SOCIAL_AUTH_GOOGLE_OAUTH2_LOGIN_REDIRECT_URL = "/example/mailbox"
+# Google Keys
+SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = config("SOCIAL_AUTH_GOOGLE_OAUTH2_KEY")  # Client: ID
+SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = config(
+    "SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET"
+)  # Client: Secret
+SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = [
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+    "https://mail.google.com/",
+]
+SOCIAL_AUTH_GOOGLE_OAUTH2_AUTH_EXTRA_ARGUMENTS = {
+    "access_type": "offline",
+    "approval_prompt": "auto",
+}
 
 O365_ADMIN_SETTINGS = {
     "TOKEN_BACKEND": "FileSystemTokenBackend",  # "AZBlobStorageTokenBackend"

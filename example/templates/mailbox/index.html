@@ -27,7 +27,9 @@
         <td width="15%"">{{ mbx.uri }}</td>
         <td>{{ mbx.active }}</td>
         <td>{{ mbx.last_polling }}</td>
-        <td><a href="{% url 'mailbox_auth_step1' mbx.id %}"> authorize </a></td>
+        <td><a href="{% url 'mailbox_auth_step1' mbx.id %}"> Authorize w/mbx</a></td>
+        <td><a href="{% url "social:begin" "google-oauth2" %}">Authorize w/Google</a>
+        </td>
     </tr>
     {% endfor %}
 </table>
