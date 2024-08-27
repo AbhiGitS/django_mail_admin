@@ -193,12 +193,18 @@ class IncomingEmail(models.Model):
                 for header, value in attachment.items():
                     new[header] = value
                 encoding = new["Content-Transfer-Encoding"]
+                document_data = ""
+                try:
+                    document_data = attachment.document.read()
+                except Exception as e:
+                    # attachment file missing!
+                    document_data = None
                 if encoding and encoding.lower() == "quoted-printable":
                     # Cannot use `email.encoders.encode_quopri due to
                     # bug 14360: http://bugs.python.org/issue14360
                     output = BytesIO()
                     encode_quopri(
-                        BytesIO(attachment.document.read()),
+                        BytesIO(document_data),
                         output,
                         quotetabs=True,
                         header=False,
@@ -207,7 +213,7 @@ class IncomingEmail(models.Model):
                     del new["Content-Transfer-Encoding"]
                     new["Content-Transfer-Encoding"] = "quoted-printable"
                 else:
-                    new.set_payload(attachment.document.read())
+                    new.set_payload(document_data)
                     del new["Content-Transfer-Encoding"]
                     encode_base64(new)
             except IncomingAttachment.DoesNotExist:
