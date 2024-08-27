@@ -299,6 +299,7 @@ class IncomingEmail(models.Model):
     class Meta:
         verbose_name = _("Incoming email")
         verbose_name_plural = _("Incoming emails")
+        unique_together = ["mailbox", "message_id"]
 
 
 class IncomingAttachment(models.Model):

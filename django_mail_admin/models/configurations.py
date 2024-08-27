@@ -393,15 +393,28 @@ class Mailbox(models.Model):
     def _process_message(self, message):
         from django_mail_admin.models import IncomingEmail, OutgoingEmail
 
-        msg = IncomingEmail()
+        message_id = None
+        if "message-id" in message:
+            try:
+                message_id = message["message-id"][0:255].strip()
+            except Exception as e:
+                message_id = None
+        if not message_id:
+            message_id = uuid.uuid4().hex
+
+        msg, created = IncomingEmail.objects.get_or_create(
+            mailbox=self, message_id=message_id
+        )
+
+        if not created:
+            return msg
 
         if get_store_original_message():
             self._process_save_original_message(message, msg)
         msg.mailbox = self
+        msg.message_id = message_id
         if "subject" in message:
             msg.subject = utils.convert_header_to_unicode(message["subject"])[0:255]
-        if "message-id" in message:
-            msg.message_id = message["message-id"][0:255].strip()
         if "from" in message:
             msg.from_header = utils.convert_header_to_unicode(message["from"])
         if "to" in message:
