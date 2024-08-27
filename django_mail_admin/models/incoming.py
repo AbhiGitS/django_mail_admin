@@ -198,7 +198,7 @@ class IncomingEmail(models.Model):
                     document_data = attachment.document.read()
                 except Exception as e:
                     # attachment file missing!
-                    document_data = None
+                    document_data = b""
                 if encoding and encoding.lower() == "quoted-printable":
                     # Cannot use `email.encoders.encode_quopri due to
                     # bug 14360: http://bugs.python.org/issue14360
