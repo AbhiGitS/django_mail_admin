@@ -460,7 +460,7 @@ class Mailbox(models.Model):
 
         else:
             msg.eml.save(
-                "%s.eml" % uuid.uuid4(), ContentFile(message.as_string()), save=False
+                "%s.eml" % uuid.uuid4(), ContentFile(BytesIO(message.as_string()).getvalue()), save=False
             )
 
     def get_new_mail(self, condition=None):
