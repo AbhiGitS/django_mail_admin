@@ -344,6 +344,7 @@ class Mailbox(models.Model):
         ):
             filename = None
             raw_filename = msg.get_filename()
+            logger.info(f"Processing attachment for incoming email id {record.pk} with raw_filename {raw_filename}")
             if raw_filename:
                 filename = utils.convert_header_to_unicode(raw_filename)
             if not filename:
@@ -354,15 +355,17 @@ class Mailbox(models.Model):
                 extension = ".bin"
 
             attachment = IncomingAttachment()
-
+            logger.info(f"Saving attachment document for incoming email id {record.pk} with filename {filename}")
             attachment.document.save(
                 uuid.uuid4().hex + extension,
                 ContentFile(BytesIO(msg.get_payload(decode=True)).getvalue()),
             )
+            logger.info(f"Attachment document saved for incoming email id {record.pk} with filename {filename}")
             attachment.message = record
             for key, value in msg.items():
                 attachment[key] = value
             attachment.save()
+            logger.info(f"Attachment created and saved for incoming email id {record.pk} with filename {filename}")
 
             placeholder = EmailMessage()
             placeholder[get_attachment_interpolation_header()] = str(attachment.pk)
