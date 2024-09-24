@@ -61,8 +61,7 @@ def google_api_get(email, url):
     if r.status_code == 401:
         # Go use the refresh token
         refresh_authorization(email)
-        r = requests.get(url, headers=headers)
-        logger.info("I got a %s", r.status_code)
+        return google_api_get(email, url)
     if r.status_code == 200:
         try:
             return r.json()
