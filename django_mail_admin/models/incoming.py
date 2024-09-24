@@ -114,8 +114,17 @@ class IncomingEmail(models.Model):
            `to_addresses`.
 
         """
-        if self.from_header:
-            return [parseaddr(self.from_header)[1].lower()]
+
+        email_obj = self.get_email_object()
+        reply_to = email_obj.get('Reply-To')
+
+        from_address = parseaddr(self.from_header)[1].lower() if self.from_header else None
+        reply_to_address = parseaddr(reply_to)[1].lower() if reply_to else None
+
+        if reply_to_address:
+            return [reply_to_address]
+        elif from_address:
+            return [from_address]
         else:
             return []
 
