@@ -103,7 +103,7 @@ def refresh_authorization(email):
     )
     results = google_api_post(
         email,
-        "https://accounts.google.com/o/oauth2/token?access_type=offline",
+        "https://oauth2.googleapis.com/token",
         post_data,
         authorized=False,
     )
