@@ -57,7 +57,7 @@ def google_api_get(email, url):
         Authorization="Bearer %s" % get_google_access_token(email),
     )
     r = requests.get(url, headers=headers)
-    logger.info("I got a %s", r.status_code)
+    logger.info("google_api_get got a %s", r.status_code)
     if r.status_code == 401:
         # Go use the refresh token
         refresh_authorization(email)
@@ -79,6 +79,7 @@ def google_api_post(email, url, post_data, authorized=True):
             )
         )
     r = requests.post(url, headers=headers, data=post_data)
+    logger.info("google_api_post got a %s", r.status_code)
     if r.status_code == 401:
         refresh_authorization(email)
         r = requests.post(url, headers=headers, data=post_data)
@@ -87,6 +88,9 @@ def google_api_post(email, url, post_data, authorized=True):
             return r.json()
         except ValueError:
             return r.text
+    else:
+        logger.error("google_api_post ended with a %s", r.status_code)
+        raise Exception("google_api_post ended with a %s" % r.status_code)
 
 
 def refresh_authorization(email):
