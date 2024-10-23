@@ -7,6 +7,7 @@ from email.message import Message as EmailMessage
 from io import BytesIO
 from tempfile import NamedTemporaryFile
 from urllib.parse import parse_qs, unquote, urlparse
+import dateparser
 
 from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile, File
@@ -424,6 +425,18 @@ class Mailbox(models.Model):
             msg.to_header = utils.convert_header_to_unicode(message["to"])
         elif "Delivered-To" in message:
             msg.to_header = utils.convert_header_to_unicode(message["Delivered-To"])
+
+        if "Date" in message:
+            try:
+                date_str = message["Date"]
+                sent_datetime = dateparser.parse(date_str)
+                if sent_datetime:
+                    msg.sent_datetime = sent_datetime
+            except Exception as e:
+                logger.warning(f"Failed to parse date for incoming email {msg.pk}: {e}")
+        if msg.sent_datetime is None:
+            msg.sent_datetime = msg.processed
+
         msg.save()
         message = self._get_dehydrated_message(message, msg)
         try:

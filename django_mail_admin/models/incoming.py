@@ -388,3 +388,6 @@ class IncomingAttachment(models.Model):
     class Meta:
         verbose_name = _("IncomingEmail attachment")
         verbose_name_plural = _("IncomingEmail attachments")
+        indexes = [
+            models.Index(fields=["message"]),
+        ]
