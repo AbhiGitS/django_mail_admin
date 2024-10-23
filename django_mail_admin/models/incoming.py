@@ -87,6 +87,12 @@ class IncomingEmail(models.Model):
     objects = models.Manager()
     unread_messages = UnreadMessageManager()
 
+    sent_datetime = models.DateTimeField(
+        _("Sent datetime"),
+        blank=True,
+        null=True,
+    )
+
     @property
     def address(self):
         """Property allowing one to get the relevant address(es).

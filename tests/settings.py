@@ -4,10 +4,13 @@ from __future__ import unicode_literals, absolute_import
 import django
 import os
 
-from decouple import config
+from decouple import config as _config
 
 DEBUG = True
 USE_TZ = True
+
+def config(key):
+    return _config(key, default="")
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
