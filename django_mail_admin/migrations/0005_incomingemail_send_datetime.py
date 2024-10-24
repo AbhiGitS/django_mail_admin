@@ -2,6 +2,7 @@
 
 from django.db import migrations, models
 from django_mail_admin.transports.imap import ImapTransport
+from dateutil import parser
 import dateparser
 
 def populate_sent_datetime(apps, schema_editor):
@@ -14,7 +15,10 @@ def populate_sent_datetime(apps, schema_editor):
             msg = ImapTransport('').get_email_from_bytes(message_contents)  # assuming message_contents is needed here
             date = msg['Date']
             if date:
-                mail_obj.sent_datetime = dateparser.parse(date)
+                sent_datetime = parser.parse(date)
+                if sent_datetime is None:
+                    sent_datetime = dateparser.parse(date)
+                mail_obj.sent_datetime = sent_datetime
                 mail_obj.save()
         except Exception as e:
             print(f"Error updating mail_obj {mail_obj.id}: {e}")
