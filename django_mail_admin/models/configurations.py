@@ -8,6 +8,7 @@ from io import BytesIO
 from tempfile import NamedTemporaryFile
 from urllib.parse import parse_qs, unquote, urlparse
 import dateparser
+from dateutil import parser
 
 from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile, File
@@ -429,7 +430,9 @@ class Mailbox(models.Model):
         if "Date" in message:
             try:
                 date_str = message["Date"]
-                sent_datetime = dateparser.parse(date_str)
+                sent_datetime = parser.parse(date_str)
+                if sent_datetime is None:
+                    sent_datetime = dateparser.parse(date_str)
                 if sent_datetime:
                     msg.sent_datetime = sent_datetime
             except Exception as e:
