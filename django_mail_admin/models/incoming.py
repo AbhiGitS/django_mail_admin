@@ -316,6 +316,11 @@ class IncomingEmail(models.Model):
         verbose_name_plural = _("Incoming emails")
         unique_together = ["mailbox", "message_id"]
 
+    def save(self, *args, **kwargs):
+        # Clean the `subject` field
+        self.subject = self.subject.replace('\r','').replace('\n','')
+        super(IncomingEmail, self).save(*args, **kwargs)
+
 
 class IncomingAttachment(models.Model):
     message = models.ForeignKey(

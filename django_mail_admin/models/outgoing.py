@@ -227,6 +227,8 @@ class OutgoingEmail(models.Model):
 
     def save(self, *args, **kwargs):
         self.full_clean()
+        # Clean the `subject` field
+        self.subject = self.subject.replace('\r','').replace('\n','')
         super(OutgoingEmail, self).save(*args, **kwargs)
 
     def __str__(self):
