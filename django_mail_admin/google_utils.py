@@ -79,7 +79,7 @@ def google_api_post(email, url, post_data, authorized=True):
             )
         )
     r = requests.post(url, headers=headers, data=post_data)
-    logger.error(f"google_api_post got a {r.status_code}, url: {url}, authorized?: {authorized}")
+    logger.info(f"google_api_post got a {r.status_code}, url: {url}, authorized?: {authorized}")
     if r.status_code == 401:
         refresh_authorization(email)
         r = requests.post(url, headers=headers, data=post_data)
