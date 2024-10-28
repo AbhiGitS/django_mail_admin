@@ -419,7 +419,7 @@ class Mailbox(models.Model):
         msg.mailbox = self
         msg.message_id = message_id
         if "subject" in message:
-            msg.subject = utils.convert_header_to_unicode(message["subject"])[0:255]
+            msg.subject = utils.convert_header_to_unicode(message["subject"]).replace("\n","").replace("\r","")[0:255]
         if "from" in message:
             msg.from_header = utils.convert_header_to_unicode(message["from"])
         if "to" in message:
