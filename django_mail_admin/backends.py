@@ -1,11 +1,15 @@
 import logging
 import base64
+import smtplib
+import ssl
 import threading
 from typing import Optional
 from urllib import parse
 
 from django.core.mail.backends.base import BaseEmailBackend
 from django.core.mail.backends.smtp import EmailBackend
+from django.core.mail.message import sanitize_address
+from django_mail_admin import settings
 
 from .mail import create
 from .models import Outbox, create_attachments
@@ -212,53 +216,137 @@ class O365Backend(EmailBackend):
             return sent_count
 
 
-class GmailOAuth2Backend(CustomEmailBackend):
-    """Override CustomEmailBackend to perform XOAUTH2 for SMTP"""
+class GmailOAuth2Backend(BaseEmailBackend):
+    """Email backend that uses XOAUTH2 for SMTP authentication"""
 
     def __init__(self, fail_silently: bool = False, **kwargs) -> None:
-        configuration: Outbox = None
-        configurations = Outbox.objects.filter(active=True)
-        if len(configurations) > 1 or len(configurations) == 0:
-            raise ValueError(
-                "Got %(l)s active configurations, expected 1"
-                % {"l": len(configurations)}
-            )
-        else:
-            configuration = configurations.first()
+        super().__init__(fail_silently=fail_silently)
+        self.connection = None
+        self._lock = threading.RLock()
+        self.from_email = None
+        self.configuration_id = None
+        # Initialize these to None - they'll be set when sending
+        self.host = None
+        self.port = None
+        self.username = None
+        self.password = None
+        self.use_tls = None
+        self.use_ssl = None
+        self.timeout = None
+        self.ssl_keyfile = None
+        self.ssl_certfile = None
 
-        super(GmailOAuth2Backend, self).__init__(
-            host=configuration.email_host
-            if configuration.email_host
-            else "smtp.gmail.com",  # TODO read default from env/config
-            port=configuration.email_port
-            if configuration.email_port
-            else "587",  # TODO read default from env/config
-            username=configuration.email_host_user,  # must be an google powered email address.
-            password="",  # no pwd; just XOAUTH2
-            use_tls=configuration.email_use_tls,
-            fail_silently=False,
-            use_ssl=configuration.email_use_ssl,
-            timeout=configuration.email_timeout,
-            ssl_keyfile=configuration.email_ssl_keyfile,
-            ssl_certfile=configuration.email_ssl_certfile,
-        )
+    def _initialize_connection(self, from_email: str) -> None:
+        """Initialize connection settings based on from_email"""
+        configuration = Outbox.objects.filter(
+            active=True,
+            email_host_user=from_email
+        ).first()
+        
+        if not configuration:
+            raise ValueError(f"No active configuration found for sender: {from_email}")
 
-    def open(self):
-        """override this to refresh token and OAUTH"""
-        retval = super(GmailOAuth2Backend, self).open()
-        if self.connection and retval:
-            # Retrieve the user's social auth credentials
-            user_social_auth = UserSocialAuth.objects.get(
-                uid=self.username, provider="google-oauth2"
-            )
+        self.from_email = from_email
+        self.configuration_id = configuration.id
+        
+        # Initialize settings from configuration
+        self.host = configuration.email_host or "smtp.gmail.com"
+        self.port = configuration.email_port or "587"
+        self.username = configuration.email_host_user  # Important: this is used for OAuth lookup
+        self.password = ""  # No password needed for XOAUTH2
+        self.use_tls = configuration.email_use_tls
+        self.use_ssl = configuration.email_use_ssl
+        self.timeout = configuration.email_timeout
+        self.ssl_keyfile = configuration.email_ssl_keyfile
+        self.ssl_certfile = configuration.email_ssl_certfile
+
+    def open(self,from_email=None):
+        """Override to use OAuth instead of password authentication"""
+
+        try:
+            # First establish the SMTP connection
+            if self.use_ssl:
+                self.connection = smtplib.SMTP_SSL(self.host, self.port, timeout=self.timeout)
+            else:
+                self.connection = smtplib.SMTP(self.host, self.port, timeout=self.timeout)
+
+            if self.use_tls:
+                self.connection.starttls()
+
+            if from_email:
+                user_social_auth = UserSocialAuth.objects.get(
+                    uid=from_email,  # This is configuration.email_host_user
+                    provider="google-oauth2"
+                )
+            else:
+                # Get OAuth credentials using email_host_user from configuration
+                user_social_auth = UserSocialAuth.objects.get(
+                    uid=self.username,  # This is configuration.email_host_user
+                    provider="google-oauth2"
+                )
+
             creds_info = user_social_auth.extra_data
             auth_string = generate_oauth2_string(
-                self.username, creds_info["access_token"], base64_encode=False
+                self.username,  # This is configuration.email_host_user
+                creds_info["access_token"],
+                base64_encode=False
             )
             self.connection.docmd(
                 "AUTH",
-                "XOAUTH2 "
-                + base64.b64encode(auth_string.encode("utf-8")).decode("utf-8"),
+                "XOAUTH2 " + base64.b64encode(auth_string.encode("utf-8")).decode("utf-8"),
             )
             return True
-        return False
+        except Exception:
+            logger.exception("gmail failed to open connection")
+            return None
+
+    def close(self):
+        """Close the connection to the email server."""
+        if self.connection is None:
+            return
+        try:
+            try:
+                self.connection.quit()
+            except (ssl.SSLError, smtplib.SMTPServerDisconnected):
+                self.connection.close()
+            except smtplib.SMTPException:
+                if self.fail_silently:
+                    return
+                raise
+        finally:
+            self.connection = None
+
+    def send_messages(self, email_messages):
+        """Send messages, reinitializing connection if from_email changes"""
+        if not email_messages:
+            return 0
+
+        with self._lock:
+            num_sent = 0
+            
+            for message in email_messages:
+                try:
+                    # Check if we need to reinitialize for a different from_email
+                    if (not self.connection or 
+                        self.from_email != message.from_email or 
+                        not self.configuration_id):
+                        
+                        self.close()
+                        self._initialize_connection(message.from_email)
+                        new_conn_created = self.open(from_email=message.from_email)
+                        
+                        if not self.connection or new_conn_created is None:
+                            continue
+
+                    if self._send(message):
+                        num_sent += 1
+                        
+                except Exception as e:
+                    if not self.fail_silently:
+                        raise
+                    logger.error(f"Failed to send message from {message.from_email}: {str(e)}")
+                    
+            if self.connection:
+                self.close()
+                
+            return num_sent
