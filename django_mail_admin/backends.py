@@ -216,7 +216,7 @@ class O365Backend(EmailBackend):
             return sent_count
 
 
-class GmailOAuth2Backend(BaseEmailBackend):
+class GmailOAuth2Backend(EmailBackend):
     """Email backend that uses XOAUTH2 for SMTP authentication"""
 
     def __init__(self, fail_silently: bool = False, **kwargs) -> None:
