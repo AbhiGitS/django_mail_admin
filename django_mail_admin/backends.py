@@ -10,6 +10,7 @@ from django.core.mail.backends.base import BaseEmailBackend
 from django.core.mail.backends.smtp import EmailBackend
 from django.core.mail.message import sanitize_address
 from django_mail_admin import settings
+from django_mail_admin.models.outgoing import EmailAddressOAuthMapping
 
 from .mail import create
 from .models import Outbox, create_attachments
@@ -185,10 +186,18 @@ class O365Backend(EmailBackend):
             
             for msg in email_messages:
                 try:
+
+                    # Use EmailAddressOAuthMapping to find oauth_username
+                    oauth_username = (
+                        EmailAddressOAuthMapping.objects.filter(send_as_email=msg.from_email)
+                        .values_list('oauth_username', flat=True)
+                        .first()
+                    ) or msg.from_email
+
                     # Try to get configuration matching this message's from_email
                     configuration = Outbox.objects.filter(
                         active=True, 
-                        email_host_user=msg.from_email
+                        email_host_user=oauth_username
                     ).first()
                     
                     if not configuration:
@@ -198,10 +207,9 @@ class O365Backend(EmailBackend):
 
                     # If connection doesn't match this message's configuration, create new connection
                     if (not self.conn or 
-                        self.from_email != msg.from_email or 
-                        self.configuration_id != configuration.id):
+                        self.from_email != msg.from_email):
                         self.close()
-                        self.from_email = msg.from_email
+                        self.from_email = oauth_username
                         self.open()
 
                     # Send the message
@@ -246,13 +254,12 @@ class GmailOAuth2Backend(EmailBackend):
         if not configuration:
             raise ValueError(f"No active configuration found for sender: {from_email}")
 
-        self.from_email = from_email
         self.configuration_id = configuration.id
         
         # Initialize settings from configuration
         self.host = configuration.email_host or "smtp.gmail.com"
         self.port = configuration.email_port or "587"
-        self.username = configuration.email_host_user  # Important: this is used for OAuth lookup
+        self.username = from_email  # Important: this is used for OAuth lookup
         self.password = ""  # No password needed for XOAUTH2
         self.use_tls = configuration.email_use_tls
         self.use_ssl = configuration.email_use_ssl
@@ -260,7 +267,7 @@ class GmailOAuth2Backend(EmailBackend):
         self.ssl_keyfile = configuration.email_ssl_keyfile
         self.ssl_certfile = configuration.email_ssl_certfile
 
-    def open(self,from_email=None):
+    def open(self,auth_uid=None):
         """Override to use OAuth instead of password authentication"""
 
         try:
@@ -273,21 +280,14 @@ class GmailOAuth2Backend(EmailBackend):
             if self.use_tls:
                 self.connection.starttls()
 
-            if from_email:
-                user_social_auth = UserSocialAuth.objects.get(
-                    uid=from_email,  # This is configuration.email_host_user
-                    provider="google-oauth2"
-                )
-            else:
-                # Get OAuth credentials using email_host_user from configuration
-                user_social_auth = UserSocialAuth.objects.get(
-                    uid=self.username,  # This is configuration.email_host_user
-                    provider="google-oauth2"
-                )
+            user_social_auth = UserSocialAuth.objects.get(
+                uid=auth_uid,  
+                provider="google-oauth2"
+            )
 
             creds_info = user_social_auth.extra_data
             auth_string = generate_oauth2_string(
-                self.username,  # This is configuration.email_host_user
+                auth_uid, 
                 creds_info["access_token"],
                 base64_encode=False
             )
@@ -330,10 +330,16 @@ class GmailOAuth2Backend(EmailBackend):
                     if (not self.connection or 
                         self.from_email != message.from_email or 
                         not self.configuration_id):
-                        
+                        #hack way to get the original username
+                        oauth_username = (
+                            EmailAddressOAuthMapping.objects.filter(send_as_email=message.from_email)
+                            .values_list('oauth_username', flat=True)
+                            .first()
+                        ) or message.from_email
+
                         self.close()
-                        self._initialize_connection(message.from_email)
-                        new_conn_created = self.open(from_email=message.from_email)
+                        self._initialize_connection(oauth_username)
+                        new_conn_created = self.open(auth_uid=oauth_username)
                         
                         if not self.connection or new_conn_created is None:
                             continue
