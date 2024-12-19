@@ -339,3 +339,21 @@ def send_mail(
         for email in emails:
             email_queued.send(email)
     return emails
+
+class EmailAddressOAuthMapping(models.Model):
+    """Maps send-as email addresses to their OAuth usernames"""
+    send_as_email = models.EmailField(
+        unique=True,
+        verbose_name=_("Send As Email Address")
+    )
+    oauth_username = models.EmailField(
+        verbose_name=_("OAuth Username")
+    )
+
+    class Meta:
+        app_label = 'django_mail_admin' 
+        verbose_name = _("Email OAuth Mapping")
+        verbose_name_plural = _("Email OAuth Mappings")
+
+    def __str__(self):
+        return f"{self.send_as_email} -> {self.oauth_username}"
