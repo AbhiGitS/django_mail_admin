@@ -39,7 +39,7 @@ class CustomEmailBackend(EmailBackend):
     ):
         super(CustomEmailBackend, self).__init__(fail_silently=fail_silently)
         # March2025 Note: keeping active=True in case we use this.
-        # if we copy this we should add from user/email filtering like O365/Gmail backends
+        # if we copy this we should add Outbox.email_host_user filtering like O365/Gmail backends
         configurations = Outbox.objects.filter(active=True)
         if len(configurations) > 1 or len(configurations) == 0:
             raise ValueError(
@@ -108,7 +108,7 @@ class O365Backend(EmailBackend):
         self.conn: Optional[O365Connection] = None
 
         # from_email might be hydrated by us (ChargeUp) in a few scenarios:
-        # 1. after class __init__ (Django will create this class so we can't add to __init__)
+        # 1. after class __init__ (Django will create this class so we can't add directly to __init__)
         # 2. during email sending when a new connection needs to be opened
         self.from_email: str | None = None
 
@@ -194,6 +194,7 @@ class O365Backend(EmailBackend):
                     if (not self.conn or self.from_email != oauth_username):
                         self.close()
                         self.from_email = oauth_username
+                        # TODO: we could leverage a connection cache rather than re-init each time
                         self.open()
 
                     # Send the message
@@ -217,8 +218,9 @@ class GmailOAuth2Backend(EmailBackend):
         self._lock = threading.RLock()
 
         # from_email might be hydrated by us (ChargeUp) in a few scenarios:
-        # 1. after class init (not currently really used for anything... a shared feature with Outlook)
-        # 2. during email sending after connection close
+        # 1. after class __init__ (Django will create this class so we can't add directly to __init__)
+        # this is currently not useful for Gmail but mirrors what's done with Outlook
+        # 2. during email sending when a new connection needs to be opened
         self.from_email = None
 
         self.configuration_id = None
@@ -335,6 +337,7 @@ class GmailOAuth2Backend(EmailBackend):
                         ) or message.from_email
 
                         self.close()
+                        # TODO: we could leverage a connection cache rather than re-init each time
                         self._initialize_connection(oauth_username)
                         new_conn_created = self.open(auth_uid=oauth_username)
 
