@@ -24,15 +24,11 @@ class ConnectionHandler(object):
         except KeyError:
             pass
 
-        # as a hack other places are using backend_alias;;;from_oauth_user. e.g. o365;;;email@example.com
-        # or backend_alias???from_email
+        # as a hack other places are using backend_alias;;;from_email. e.g. o365;;;email@example.com
         # previously it just used any outbox for the alias
         real_alias = maybe_hacked_alias
-        from_oauth_user: str | None = None
         from_email: str | None = None
-        if "???" in maybe_hacked_alias:
-            real_alias,from_email = maybe_hacked_alias.split("???")
-        elif ";;;" in maybe_hacked_alias:
+        if ";;;" in maybe_hacked_alias:
             real_alias,from_oauth_user = maybe_hacked_alias.split(";;;")
 
         try:
@@ -45,7 +41,6 @@ class ConnectionHandler(object):
 
         # now mutate the backend class after init since get_connection is within django
         backend_class.from_email = from_email
-        backend_class.from_oauth_user = from_oauth_user
 
         backend_class.open()
         self._connections.connections[maybe_hacked_alias] = backend_class

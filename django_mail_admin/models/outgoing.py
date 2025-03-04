@@ -136,11 +136,12 @@ class OutgoingEmail(models.Model):
         if outbox:
             hack_alias = self.backend_alias + ";;;" + outbox.email_host_user
         else:
-            # we effectively always want an outbox passed in but keeping for compatability
+            # we effectively always want an outbox passed in but keeping this for compatability
             # lets fallback to the message from_email in this case (this might cause more Outbox lookup failures)
-            hack_alias = self.backend_alias + "???" + self.from_email
+            hack_alias = self.backend_alias + ";;;" + self.from_email
 
         # this will open and cache a connection to the alias above
+        # maybe remove this and only open a connection on send
         connection = connections[hack_alias]
 
         if html_message:

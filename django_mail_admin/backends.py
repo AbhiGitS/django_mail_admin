@@ -107,17 +107,14 @@ class O365Backend(EmailBackend):
         super().__init__(fail_silently, **kwargs)
         self.conn: Optional[O365Connection] = None
 
-        # from_email or from_oauth_user might be hydrated by us (ChargeUp) after init (since Django does the init in places)
-        self.from_email = None
-        self.from_oauth_user = None
+        # from_email might be hydrated by us (ChargeUp) in a few scenarios:
+        # 1. after class __init__ (Django will create this class so we can't add to __init__)
+        # 2. during email sending when a new connection needs to be opened
+        self.from_email: str | None = None
 
         self.fail_silently: bool = fail_silently
         self.configuration_id: Optional[int] = None
         self._lock = threading.RLock()
-
-    @property
-    def lookup_email(self) -> str | None:
-        return self.from_oauth_user or self.from_email
 
     def close(self):
         """Closes and cleans up the current connection"""
@@ -125,41 +122,28 @@ class O365Backend(EmailBackend):
             if self.conn:
                 self.conn = None
                 self.from_email = None
-                self.from_oauth_user = None
                 self.configuration_id = None
             super().close()
 
-    def _validate_configuration(self, configuration: Outbox) -> None:
-        """Validates if we need to create a new connection based on configuration"""
-        if not configuration:
-            raise ValueError("No Outbox found")
-
-        # If configuration has changed, close existing connection
-        if self.configuration_id != configuration.id:
-            self.close()
-
-        # If connection exists, validate it's still using correct email
-        if self.conn and self.lookup_email != configuration.email_host_user:
-            self.close()
-
     def open(self):
         """Opens a new O365 connection using the relevant configuration"""
-        # If we already have a valid connection, we're good
         with self._lock:
-            if self.conn and self.lookup_email:
-                return
-
             configuration = Outbox.objects.filter(
                 email_host__icontains="office365",
-                email_host_user=self.lookup_email
+                email_host_user=self.from_email
             ).first()
 
             if not configuration:
-                raise ValueError(f"Unable to find an Outbox with email_host__icontains=office365 email_host_user={self.lookup_email} from_oauth_user={self.from_oauth_user} from_email={self.from_email}")
+                raise ValueError(f"Unable to find an Outbox with email_host__icontains=office365 email_host_user={self.from_email}")
 
-            # Validate configuration and connection state
-            self._validate_configuration(configuration)
-            self.configuration_id = configuration.id
+            # existing saved connection is valid. no need for a new one
+            if self.conn and self.configuration_id == configuration.id:
+                return
+            elif self.conn:
+                # close the existing invalid connection
+                self.close()
+                self.from_email = configuration.email_host_user
+                self.configuration_id = configuration.id
 
             # Parse O365 connection details from email_host
             parseresult = parse.urlparse(configuration.email_host)
@@ -177,7 +161,7 @@ class O365Backend(EmailBackend):
             try:
                 # Create new connection with current configuration
                 self.conn = O365Connection(
-                    from_email=self.lookup_email,
+                    from_email=self.from_email,
                     client_app_id=client_app_id,
                     client_id_key=client_id_key,
                     client_secret_key=client_secret_key,
@@ -194,9 +178,11 @@ class O365Backend(EmailBackend):
         with self._lock:
             sent_count = 0
 
+            # sort by from_email to try to reduce connection closing/opening
+            email_messages = sorted(email_messages, key=lambda m: m.from_email)
+
             for msg in email_messages:
                 try:
-
                     # Use EmailAddressOAuthMapping to find oauth_username
                     oauth_username = (
                         EmailAddressOAuthMapping.objects.filter(send_as_email=msg.from_email)
@@ -204,21 +190,10 @@ class O365Backend(EmailBackend):
                         .first()
                     ) or msg.from_email
 
-                    # Try to get configuration matching this message's from_email
-                    configuration = Outbox.objects.filter(
-                        email_host_user=oauth_username
-                    ).first()
-
-                    if not configuration:
-                        raise ValueError(
-                            f"No Outbox found for sender: {msg.from_email}"
-                        )
-
                     # If connection doesn't match this message's configuration, create new connection
-                    if (not self.conn or
-                        self.lookup_email != msg.from_email):
+                    if (not self.conn or self.from_email != oauth_username):
                         self.close()
-                        self.from_oauth_user = oauth_username
+                        self.from_email = oauth_username
                         self.open()
 
                     # Send the message
@@ -241,9 +216,10 @@ class GmailOAuth2Backend(EmailBackend):
         self.connection = None
         self._lock = threading.RLock()
 
-        # from_email or from_oauth_user might be hydrated by us (ChargeUp) after init (since Django does the init in places)
+        # from_email might be hydrated by us (ChargeUp) in a few scenarios:
+        # 1. after class init (not currently really used for anything... a shared feature with Outlook)
+        # 2. during email sending after connection close
         self.from_email = None
-        self.from_oauth_user = None
 
         self.configuration_id = None
         # Initialize these to None - they'll be set when sending
@@ -257,28 +233,25 @@ class GmailOAuth2Backend(EmailBackend):
         self.ssl_keyfile = None
         self.ssl_certfile = None
 
-    @property
-    def lookup_email(self) -> str | None:
-        return self.from_oauth_user or self.from_email
-
-    def _initialize_connection(self, from_oauth_email: str) -> None:
+    def _initialize_connection(self, from_email: str) -> None:
         """Initialize connection settings based on from_email"""
         configuration = Outbox.objects.filter(
             email_host__icontains="gmail",
-            email_host_user=from_oauth_email or self.lookup_email
+            email_host_user=from_email
         ).first()
 
         if not configuration:
             raise ValueError(
-                f"Unable to find an Outbox with email_host__icontains=gmail email_host_user={self.lookup_email} from_oauth_user={self.from_oauth_user} from_email={self.from_email}")
+                f"Unable to find an Outbox with email_host__icontains=gmail email_host_user={from_email}"
+            )
 
         self.configuration_id = configuration.id
-        self.from_oauth_user = from_oauth_email
+        self.from_email = from_email
 
         # Initialize settings from configuration
         self.host = configuration.email_host or "smtp.gmail.com"
         self.port = configuration.email_port or "587"
-        self.username = self.lookup_email  # Important: this is used for OAuth lookup
+        self.username = from_email  # Important: this is used for OAuth lookup
         self.password = ""  # No password needed for XOAUTH2
         self.use_tls = configuration.email_use_tls
         self.use_ssl = configuration.email_use_ssl
@@ -335,7 +308,7 @@ class GmailOAuth2Backend(EmailBackend):
         finally:
             self.connection = None
             self.from_email = None
-            self.from_oauth_user = None
+            self.configuration_id = None
 
     def send_messages(self, email_messages):
         """Send messages, reinitializing connection if from_email changes"""
@@ -345,11 +318,14 @@ class GmailOAuth2Backend(EmailBackend):
         with self._lock:
             num_sent = 0
 
+            # sort by from_email to reduce connection opening
+            email_messages = sorted(email_messages, key=lambda m: m.from_email)
+
             for message in email_messages:
                 try:
                     # Check if we need to reinitialize for a different from_email
                     if (not self.connection or
-                        self.lookup_email != message.from_email or
+                        self.from_email != message.from_email or
                         not self.configuration_id):
                         #hack way to get the original username
                         oauth_username = (
