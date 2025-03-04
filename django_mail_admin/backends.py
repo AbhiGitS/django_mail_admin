@@ -323,18 +323,24 @@ class GmailOAuth2Backend(EmailBackend):
             # sort by from_email to reduce connection opening
             email_messages = sorted(email_messages, key=lambda m: m.from_email)
 
+            from_email_to_oauth_cache = {}
             for message in email_messages:
                 try:
+                    # hack way to get the original username
+                    if message.from_email in from_email_to_oauth_cache:
+                        oauth_username = from_email_to_oauth_cache[message.from_email]
+                    else:
+                        oauth_username = (
+                             EmailAddressOAuthMapping.objects.filter(send_as_email=message.from_email)
+                             .values_list('oauth_username', flat=True)
+                             .first()
+                        ) or message.from_email
+                        from_email_to_oauth_cache[message.from_email] = oauth_username
+
                     # Check if we need to reinitialize for a different from_email
                     if (not self.connection or
-                        self.from_email != message.from_email or
+                        self.from_email != oauth_username or
                         not self.configuration_id):
-                        #hack way to get the original username
-                        oauth_username = (
-                            EmailAddressOAuthMapping.objects.filter(send_as_email=message.from_email)
-                            .values_list('oauth_username', flat=True)
-                            .first()
-                        ) or message.from_email
 
                         self.close()
                         # TODO: we could leverage a connection cache rather than re-init each time
