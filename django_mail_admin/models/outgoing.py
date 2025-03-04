@@ -14,7 +14,6 @@ from django_mail_admin.settings import get_log_level, get_backend_names_str
 from django_mail_admin.signals import email_sent, email_failed_to_send, email_queued
 from django_mail_admin.utils import get_attachment_save_path, PRIORITY, STATUS
 from django_mail_admin.validators import validate_email_with_name
-from . import Outbox
 from .templates import EmailTemplate
 
 logger = logging.getLogger(__name__)
@@ -111,7 +110,7 @@ class OutgoingEmail(models.Model):
 
         return self.prepare_email_message(outbox=outbox)
 
-    def prepare_email_message(self, outbox: Outbox | None=None):
+    def prepare_email_message(self, outbox=None):
         """
         Returns a django ``EmailMessage`` or ``EmailMultiAlternatives`` object,
         depending on whether html_message is empty.

@@ -87,17 +87,17 @@ def get_new_mail(mailbox_admin, request, queryset):
 get_new_mail.short_description = _("Get new mail")
 
 
-# def switch_active(mailbox_admin, request, queryset):
-#     for mailbox in queryset.all():
-#         mailbox.active = not mailbox.active
-#         mailbox.save()
-#
-#
-# switch_active.short_description = _("Switch active status")
+def switch_active(mailbox_admin, request, queryset):
+    for mailbox in queryset.all():
+        mailbox.active = not mailbox.active
+        mailbox.save()
+
+
+switch_active.short_description = _("Switch active status")
 
 
 def send_queued_mail(outbox_admin, request, queryset):
-    outbox: Outbox = None
+    outbox: Outbox | None = None
     for outbox in queryset.all():
         # if not outbox.active:
         #     messages.error("Outbox not active!")
@@ -147,7 +147,7 @@ class MailboxAdmin(get_parent()):
     readonly_fields = [
         "last_polling",
     ]
-    actions = [get_new_mail]#, switch_active]
+    actions = [get_new_mail, switch_active]
 
 
 class IncomingAttachmentInline(admin.TabularInline):
@@ -489,9 +489,9 @@ class OutboxAdmin(admin.ModelAdmin):
         "email_host_user",
         "email_port",
         "id",
-        "active",
+        #"active",
     )
-    list_filter = ("active",)
+    #list_filter = ("active",)
     actions = [send_queued_mail]
 
 

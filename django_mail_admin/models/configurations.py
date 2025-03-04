@@ -59,13 +59,14 @@ class Outbox(models.Model):
     email_timeout = models.PositiveSmallIntegerField(
         "EMAIL_TIMEOUT", null=True, blank=True
     )
-    # deprecated field us at ChargeUp or not using anymore. keeping for compatability.
+    # deprecated field we're no longer actively using. keeping for test/code compatability.
     active = models.BooleanField(_("Active"), default=False)
 
     def save(self, *args, **kwargs):
         # Only one item can be active at a time
 
-        # ChargeUp Note: this was a previous side effect on Outbox.save
+        # March2025 Note: this was a previous side effect on Outbox.save
+        # we're not using the concept of a singleton Active Outbox
 
         # if self.active:
         #     # select all other active items

@@ -38,12 +38,12 @@ class CustomEmailBackend(EmailBackend):
         **kwargs,
     ):
         super(CustomEmailBackend, self).__init__(fail_silently=fail_silently)
-        # March2025 ChargeUp note: keeping active=True in case we use this to prevent false sends
-        # if we copy this we should do from user/email filtering like O365/Gmail backends
+        # March2025 Note: keeping active=True in case we use this.
+        # if we copy this we should add from user/email filtering like O365/Gmail backends
         configurations = Outbox.objects.filter(active=True)
         if len(configurations) > 1 or len(configurations) == 0:
             raise ValueError(
-                "Got %(l)s active configurations, expected 1"
+                "Got %(l)s active Outboxes, expected 1"
                 % {"l": len(configurations)}
             )
         else:
@@ -132,7 +132,7 @@ class O365Backend(EmailBackend):
     def _validate_configuration(self, configuration: Outbox) -> None:
         """Validates if we need to create a new connection based on configuration"""
         if not configuration:
-            raise ValueError("No active email configuration found")
+            raise ValueError("No Outbox found")
 
         # If configuration has changed, close existing connection
         if self.configuration_id != configuration.id:
@@ -211,7 +211,7 @@ class O365Backend(EmailBackend):
 
                     if not configuration:
                         raise ValueError(
-                            f"No active configuration found for sender: {msg.from_email}"
+                            f"No Outbox found for sender: {msg.from_email}"
                         )
 
                     # If connection doesn't match this message's configuration, create new connection
