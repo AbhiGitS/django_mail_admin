@@ -87,21 +87,21 @@ def get_new_mail(mailbox_admin, request, queryset):
 get_new_mail.short_description = _("Get new mail")
 
 
-def switch_active(mailbox_admin, request, queryset):
-    for mailbox in queryset.all():
-        mailbox.active = not mailbox.active
-        mailbox.save()
-
-
-switch_active.short_description = _("Switch active status")
+# def switch_active(mailbox_admin, request, queryset):
+#     for mailbox in queryset.all():
+#         mailbox.active = not mailbox.active
+#         mailbox.save()
+#
+#
+# switch_active.short_description = _("Switch active status")
 
 
 def send_queued_mail(outbox_admin, request, queryset):
     outbox: Outbox = None
     for outbox in queryset.all():
-        if not outbox.active:
-            messages.error("Outbox not active!")
-            return
+        # if not outbox.active:
+        #     messages.error("Outbox not active!")
+        #     return
         default_processes = 1
         default_log_level = 1  # 0 - do nothing, 1 - only log errors
         default_lockfile = tempfile.gettempdir() + "/django_mail_admin"
@@ -147,7 +147,7 @@ class MailboxAdmin(get_parent()):
     readonly_fields = [
         "last_polling",
     ]
-    actions = [get_new_mail, switch_active]
+    actions = [get_new_mail]#, switch_active]
 
 
 class IncomingAttachmentInline(admin.TabularInline):
@@ -446,15 +446,19 @@ class OutgoingEmailAdmin(admin.ModelAdmin):
 
     to_display.short_description = _("To")
 
-    def get_form(self, request, obj=None, **kwargs):
-        # Try to get active Outbox and prepopulate from_email field
-        form = super(OutgoingEmailAdmin, self).get_form(request, obj, **kwargs)
-        configurations = Outbox.objects.filter(active=True)
-        if not (len(configurations) > 1 or len(configurations) == 0):
-            form.base_fields[
-                "from_email"
-            ].initial = configurations.first().email_host_user
-        return form
+    # March 2025: commenting out the get_form override
+    # given how active accounts worked, I don't think this worked
+    # and I think it's more dangerous to pick a random default
+
+    # def get_form(self, request, obj=None, **kwargs):
+    #     # Try to get active Outbox and prepopulate from_email field
+    #     form = super(OutgoingEmailAdmin, self).get_form(request, obj, **kwargs)
+    #     configurations = Outbox.objects.filter(active=True)
+    #     if not (len(configurations) > 1 or len(configurations) == 0):
+    #         form.base_fields[
+    #             "from_email"
+    #         ].initial = configurations.first().email_host_user
+    #     return form
 
     def save_model(self, request, obj, form, change):
         super(OutgoingEmailAdmin, self).save_model(request, obj, form, change)

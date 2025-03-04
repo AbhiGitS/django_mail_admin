@@ -10,7 +10,8 @@ logging.basicConfig(level=logging.INFO)
 
 class Command(BaseCommand):
     def handle(self, *args, **options):
-        mailboxes = Mailbox.active_mailboxes.all()
+        #mailboxes = Mailbox.active_mailboxes.all()
+        mailboxes = Mailbox.objects.all()
         if args:
             mailboxes = mailboxes.filter(
                 name=' '.join(args)

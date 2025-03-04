@@ -59,19 +59,22 @@ class Outbox(models.Model):
     email_timeout = models.PositiveSmallIntegerField(
         "EMAIL_TIMEOUT", null=True, blank=True
     )
+    # deprecated field us at ChargeUp or not using anymore. keeping for compatability.
     active = models.BooleanField(_("Active"), default=False)
 
     def save(self, *args, **kwargs):
         # Only one item can be active at a time
 
-        if self.active:
-            # select all other active items
-            qs = type(self).objects.filter(active=True)
-            # except self (if self already exists)
-            if self.pk:
-                qs = qs.exclude(pk=self.pk)
-            # and deactive them
-            qs.update(active=False)
+        # ChargeUp Note: this was a previous side effect on Outbox.save
+
+        # if self.active:
+        #     # select all other active items
+        #     qs = type(self).objects.filter(active=True)
+        #     # except self (if self already exists)
+        #     if self.pk:
+        #         qs = qs.exclude(pk=self.pk)
+        #     # and deactive them
+        #     qs.update(active=False)
 
         super(Outbox, self).save(*args, **kwargs)
 
