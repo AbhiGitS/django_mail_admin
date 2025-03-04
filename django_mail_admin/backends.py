@@ -6,10 +6,7 @@ import threading
 from typing import Optional
 from urllib import parse
 
-from django.core.mail.backends.base import BaseEmailBackend
 from django.core.mail.backends.smtp import EmailBackend
-from django.core.mail.message import sanitize_address
-from django_mail_admin import settings
 from django_mail_admin.models.outgoing import EmailAddressOAuthMapping
 
 from .mail import create
@@ -41,11 +38,12 @@ class CustomEmailBackend(EmailBackend):
         **kwargs,
     ):
         super(CustomEmailBackend, self).__init__(fail_silently=fail_silently)
-        # TODO: implement choosing backend for a letter as a param
+        # March2025 Note: keeping active=True in case we use this.
+        # if we copy this we should add Outbox.email_host_user filtering like O365/Gmail backends
         configurations = Outbox.objects.filter(active=True)
         if len(configurations) > 1 or len(configurations) == 0:
             raise ValueError(
-                "Got %(l)s active configurations, expected 1"
+                "Got %(l)s active Outboxes, expected 1"
                 % {"l": len(configurations)}
             )
         else:
@@ -108,7 +106,12 @@ class O365Backend(EmailBackend):
     def __init__(self, fail_silently: bool = False, **kwargs) -> None:
         super().__init__(fail_silently, **kwargs)
         self.conn: Optional[O365Connection] = None
-        self.from_email: Optional[str] = None
+
+        # from_email might be hydrated by us (ChargeUp) in a few scenarios:
+        # 1. after class __init__ (Django will create this class so we can't add directly to __init__)
+        # 2. during email sending when a new connection needs to be opened
+        self.from_email: str | None = None
+
         self.fail_silently: bool = fail_silently
         self.configuration_id: Optional[int] = None
         self._lock = threading.RLock()
@@ -122,48 +125,39 @@ class O365Backend(EmailBackend):
                 self.configuration_id = None
             super().close()
 
-    def _validate_configuration(self, configuration: Outbox) -> None:
-        """Validates if we need to create a new connection based on configuration"""
-        if not configuration:
-            raise ValueError("No active email configuration found")
-        
-        # If configuration has changed, close existing connection
-        if self.configuration_id != configuration.id:
-            self.close()
-            
-        # If connection exists, validate it's still using correct email
-        if self.conn and self.from_email != configuration.email_host_user:
-            self.close()
-
     def open(self):
-        """Opens a new O365 connection using the active configuration"""
+        """Opens a new O365 connection using the relevant configuration"""
         with self._lock:
-            # Get active configuration
-            configuration = Outbox.objects.filter(active=True).first()
-            
-            # Validate configuration and connection state
-            self._validate_configuration(configuration)
-            
-            # If we already have a valid connection, return
-            if self.conn and self.from_email:
+            configuration = Outbox.objects.filter(
+                email_host__icontains="office365",
+                email_host_user=self.from_email
+            ).first()
+
+            if not configuration:
+                raise ValueError(f"Unable to find an Outbox with email_host__icontains=office365 email_host_user={self.from_email}")
+
+            # existing saved connection is valid. no need for a new one
+            if self.conn and self.configuration_id == configuration.id:
                 return
-            
-            self.from_email = configuration.email_host_user
-            self.configuration_id = configuration.id
-            
+            elif self.conn:
+                # close the existing invalid connection
+                self.close()
+                self.from_email = configuration.email_host_user
+                self.configuration_id = configuration.id
+
             # Parse O365 connection details from email_host
             parseresult = parse.urlparse(configuration.email_host)
             if not O365Connection.SCHEME == parseresult.scheme.lower():
                 raise ValueError(
                     f'Invalid EMAIL_HOST scheme, expected "{O365Connection.SCHEME}", got "{parseresult.scheme}"'
                 )
-                
+
             # Extract connection parameters from query string
             query_dict = dict(parse.parse_qsl(parseresult.query))
             client_app_id = query_dict.get("client_app_id", "")
             client_id_key = query_dict.get("client_id_key", "")
             client_secret_key = query_dict.get("client_secret_key", "")
-            
+
             try:
                 # Create new connection with current configuration
                 self.conn = O365Connection(
@@ -177,16 +171,18 @@ class O365Backend(EmailBackend):
                 raise
 
     def send_messages(self, email_messages) -> int:
-        """Sends email messages via O365 connection matching the from_email"""
+        """Sends email messages via O365 connection matching the from_email for each message"""
         if not email_messages:
             return 0
-            
+
         with self._lock:
             sent_count = 0
-            
+
+            # sort by from_email to try to reduce connection closing/opening
+            email_messages = sorted(email_messages, key=lambda m: m.from_email)
+
             for msg in email_messages:
                 try:
-
                     # Use EmailAddressOAuthMapping to find oauth_username
                     oauth_username = (
                         EmailAddressOAuthMapping.objects.filter(send_as_email=msg.from_email)
@@ -194,22 +190,11 @@ class O365Backend(EmailBackend):
                         .first()
                     ) or msg.from_email
 
-                    # Try to get configuration matching this message's from_email
-                    configuration = Outbox.objects.filter(
-                        active=True, 
-                        email_host_user=oauth_username
-                    ).first()
-                    
-                    if not configuration:
-                        raise ValueError(
-                            f"No active configuration found for sender: {msg.from_email}"
-                        )
-
                     # If connection doesn't match this message's configuration, create new connection
-                    if (not self.conn or 
-                        self.from_email != msg.from_email):
+                    if (not self.conn or self.from_email != oauth_username):
                         self.close()
                         self.from_email = oauth_username
+                        # TODO: we could leverage a connection cache rather than re-init each time
                         self.open()
 
                     # Send the message
@@ -220,7 +205,7 @@ class O365Backend(EmailBackend):
                     if not self.fail_silently:
                         raise
                     logger.error(f"Failed to send message from {msg.from_email}: {str(e)}")
-                    
+
             return sent_count
 
 
@@ -231,7 +216,13 @@ class GmailOAuth2Backend(EmailBackend):
         super().__init__(fail_silently=fail_silently)
         self.connection = None
         self._lock = threading.RLock()
+
+        # from_email might be hydrated by us (ChargeUp) in a few scenarios:
+        # 1. after class __init__ (Django will create this class so we can't add directly to __init__)
+        # this is currently not useful for Gmail but mirrors what's done with Outlook
+        # 2. during email sending when a new connection needs to be opened
         self.from_email = None
+
         self.configuration_id = None
         # Initialize these to None - they'll be set when sending
         self.host = None
@@ -247,15 +238,18 @@ class GmailOAuth2Backend(EmailBackend):
     def _initialize_connection(self, from_email: str) -> None:
         """Initialize connection settings based on from_email"""
         configuration = Outbox.objects.filter(
-            active=True,
+            email_host__icontains="gmail",
             email_host_user=from_email
         ).first()
-        
+
         if not configuration:
-            raise ValueError(f"No active configuration found for sender: {from_email}")
+            raise ValueError(
+                f"Unable to find an Outbox with email_host__icontains=gmail email_host_user={from_email}"
+            )
 
         self.configuration_id = configuration.id
-        
+        self.from_email = from_email
+
         # Initialize settings from configuration
         self.host = configuration.email_host or "smtp.gmail.com"
         self.port = configuration.email_port or "587"
@@ -281,13 +275,13 @@ class GmailOAuth2Backend(EmailBackend):
                 self.connection.starttls()
 
             user_social_auth = UserSocialAuth.objects.get(
-                uid=auth_uid,  
+                uid=auth_uid,
                 provider="google-oauth2"
             )
 
             creds_info = user_social_auth.extra_data
             auth_string = generate_oauth2_string(
-                auth_uid, 
+                auth_uid,
                 creds_info["access_token"],
                 base64_encode=False
             )
@@ -315,6 +309,8 @@ class GmailOAuth2Backend(EmailBackend):
                 raise
         finally:
             self.connection = None
+            self.from_email = None
+            self.configuration_id = None
 
     def send_messages(self, email_messages):
         """Send messages, reinitializing connection if from_email changes"""
@@ -323,36 +319,42 @@ class GmailOAuth2Backend(EmailBackend):
 
         with self._lock:
             num_sent = 0
-            
+
+            # sort by from_email to reduce connection opening
+            email_messages = sorted(email_messages, key=lambda m: m.from_email)
+
             for message in email_messages:
                 try:
+                    # hack way to get the original username
+                    # TODO: could do a cache here
+                    oauth_username = (
+                         EmailAddressOAuthMapping.objects.filter(send_as_email=message.from_email)
+                         .values_list('oauth_username', flat=True)
+                         .first()
+                    ) or message.from_email
+
                     # Check if we need to reinitialize for a different from_email
-                    if (not self.connection or 
-                        self.from_email != message.from_email or 
+                    if (not self.connection or
+                        self.from_email != oauth_username or
                         not self.configuration_id):
-                        #hack way to get the original username
-                        oauth_username = (
-                            EmailAddressOAuthMapping.objects.filter(send_as_email=message.from_email)
-                            .values_list('oauth_username', flat=True)
-                            .first()
-                        ) or message.from_email
 
                         self.close()
+                        # TODO: we could leverage a connection cache rather than re-init each time
                         self._initialize_connection(oauth_username)
                         new_conn_created = self.open(auth_uid=oauth_username)
-                        
+
                         if not self.connection or new_conn_created is None:
                             continue
 
                     if self._send(message):
                         num_sent += 1
-                        
+
                 except Exception as e:
                     if not self.fail_silently:
                         raise
                     logger.error(f"Failed to send message from {message.from_email}: {str(e)}")
-                    
+
             if self.connection:
                 self.close()
-                
+
             return num_sent

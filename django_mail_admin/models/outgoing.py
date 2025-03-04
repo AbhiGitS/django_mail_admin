@@ -101,16 +101,16 @@ class OutgoingEmail(models.Model):
 
         return Context(context)
 
-    def email_message(self):
+    def email_message(self, outbox=None):
         """
         Returns Django EmailMessage object for sending.
         """
         if self._cached_email_message:
             return self._cached_email_message
 
-        return self.prepare_email_message()
+        return self.prepare_email_message(outbox=outbox)
 
-    def prepare_email_message(self):
+    def prepare_email_message(self, outbox=None):
         """
         Returns a django ``EmailMessage`` or ``EmailMultiAlternatives`` object,
         depending on whether html_message is empty.
@@ -124,7 +124,25 @@ class OutgoingEmail(models.Model):
             subject = self.subject
             html_message = self.html_message
 
-        connection = connections[self.backend_alias or "default"]
+        # hack: OG version commented out below
+        #connection = connections[self.backend_alias or "default"]
+
+        # this adds a connection for the outbox we're intending to send from rather than something like:
+        # "any o365 outbox" or "any active outbox"
+        # we should also likely always have a backend alias
+        if not self.backend_alias:
+            raise ValueError(f"Outgoing emails should always have a backend alias. It was: {self.backend_alias} for from_email: {self.from_email}")
+
+        if outbox:
+            hack_alias = self.backend_alias + ";;;" + outbox.email_host_user
+        else:
+            # we effectively always want an outbox passed in but keeping this for compatability
+            # lets fallback to the message from_email in this case (this might cause more Outbox lookup failures)
+            hack_alias = self.backend_alias + ";;;" + self.from_email
+
+        # this will open and cache a connection to the alias above
+        # maybe remove this and only open a connection on send
+        connection = connections[hack_alias]
 
         if html_message:
             msg = EmailMultiAlternatives(
@@ -181,14 +199,16 @@ class OutgoingEmail(models.Model):
             retval = True
         return retval
 
-    def dispatch(self, log_level=None, commit=True):
+    def dispatch(self, outbox=None, log_level=None, commit=True):
         """
         Sends email and log the result.
+
+        outbox: Attach an outbox to ensure the right outbox is used for connections/validation.
         """
         email_message = None
         # Priority is handled in mail.send
         try:
-            email_message = self.email_message()
+            email_message = self.email_message(outbox=outbox)
             email_message.send()
             status = STATUS.sent
             self._update_message_id()
@@ -351,7 +371,7 @@ class EmailAddressOAuthMapping(models.Model):
     )
 
     class Meta:
-        app_label = 'django_mail_admin' 
+        app_label = 'django_mail_admin'
         verbose_name = _("Email OAuth Mapping")
         verbose_name_plural = _("Email OAuth Mappings")
 
