@@ -6,10 +6,7 @@ import threading
 from typing import Optional
 from urllib import parse
 
-from django.core.mail.backends.base import BaseEmailBackend
 from django.core.mail.backends.smtp import EmailBackend
-from django.core.mail.message import sanitize_address
-from django_mail_admin import settings
 from django_mail_admin.models.outgoing import EmailAddressOAuthMapping
 
 from .mail import create
@@ -41,10 +38,8 @@ class CustomEmailBackend(EmailBackend):
         **kwargs,
     ):
         super(CustomEmailBackend, self).__init__(fail_silently=fail_silently)
-        # TODO: implement choosing backend for a letter as a param
         # March2025 ChargeUp note: keeping active=True in case we use this to prevent false sends
         # if we copy this we should do from user/email filtering like O365/Gmail backends
-
         configurations = Outbox.objects.filter(active=True)
         if len(configurations) > 1 or len(configurations) == 0:
             raise ValueError(
@@ -192,7 +187,7 @@ class O365Backend(EmailBackend):
                 raise
 
     def send_messages(self, email_messages) -> int:
-        """Sends email messages via O365 connection matching the from_email"""
+        """Sends email messages via O365 connection matching the from_email for each message"""
         if not email_messages:
             return 0
 
@@ -221,9 +216,9 @@ class O365Backend(EmailBackend):
 
                     # If connection doesn't match this message's configuration, create new connection
                     if (not self.conn or
-                        self.from_email != msg.from_email):
+                        self.lookup_email != msg.from_email):
                         self.close()
-                        self.from_email = oauth_username
+                        self.from_oauth_user = oauth_username
                         self.open()
 
                     # Send the message
@@ -262,21 +257,27 @@ class GmailOAuth2Backend(EmailBackend):
         self.ssl_keyfile = None
         self.ssl_certfile = None
 
+    @property
+    def lookup_email(self) -> str | None:
+        return self.from_oauth_user or self.from_email
+
     def _initialize_connection(self, from_email: str) -> None:
         """Initialize connection settings based on from_email"""
         configuration = Outbox.objects.filter(
-            email_host_user=from_email
+            email_host__icontains="gmail",
+            email_host_user=self.lookup_email
         ).first()
 
         if not configuration:
-            raise ValueError(f"No active configuration found for sender: {from_email}")
+            raise ValueError(
+                f"Unable to find an Outbox with email_host__icontains=gmail email_host_user={self.lookup_email} from_oauth_user={self.from_oauth_user} from_email={self.from_email}")
 
         self.configuration_id = configuration.id
 
         # Initialize settings from configuration
         self.host = configuration.email_host or "smtp.gmail.com"
         self.port = configuration.email_port or "587"
-        self.username = from_email  # Important: this is used for OAuth lookup
+        self.username = self.lookup_email  # Important: this is used for OAuth lookup
         self.password = ""  # No password needed for XOAUTH2
         self.use_tls = configuration.email_use_tls
         self.use_ssl = configuration.email_use_ssl
@@ -332,6 +333,8 @@ class GmailOAuth2Backend(EmailBackend):
                 raise
         finally:
             self.connection = None
+            self.from_email = None
+            self.from_oauth_user = None
 
     def send_messages(self, email_messages):
         """Send messages, reinitializing connection if from_email changes"""
@@ -345,7 +348,7 @@ class GmailOAuth2Backend(EmailBackend):
                 try:
                     # Check if we need to reinitialize for a different from_email
                     if (not self.connection or
-                        self.from_email != message.from_email or
+                        self.lookup_email != message.from_email or
                         not self.configuration_id):
                         #hack way to get the original username
                         oauth_username = (

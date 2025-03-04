@@ -14,6 +14,7 @@ from django_mail_admin.settings import get_log_level, get_backend_names_str
 from django_mail_admin.signals import email_sent, email_failed_to_send, email_queued
 from django_mail_admin.utils import get_attachment_save_path, PRIORITY, STATUS
 from django_mail_admin.validators import validate_email_with_name
+from . import Outbox
 from .templates import EmailTemplate
 
 logger = logging.getLogger(__name__)
@@ -110,7 +111,7 @@ class OutgoingEmail(models.Model):
 
         return self.prepare_email_message(outbox=outbox)
 
-    def prepare_email_message(self, outbox=None):
+    def prepare_email_message(self, outbox: Outbox | None=None):
         """
         Returns a django ``EmailMessage`` or ``EmailMultiAlternatives`` object,
         depending on whether html_message is empty.
@@ -128,7 +129,7 @@ class OutgoingEmail(models.Model):
         #connection = connections[self.backend_alias or "default"]
 
         # this adds a connection for the outbox we're intending to send from rather than something like:
-        # "any 0365 outbox" or "any active outbox"
+        # "any o365 outbox" or "any active outbox"
         # we should also likely always have a backend alias
         if not self.backend_alias:
             raise ValueError(f"Outgoing emails should always have a backend alias. It was: {self.backend_alias} for from_email: {self.from_email}")
@@ -137,9 +138,10 @@ class OutgoingEmail(models.Model):
             hack_alias = self.backend_alias + ";;;" + outbox.email_host_user
         else:
             # we effectively always want an outbox passed in but keeping for compatability
-            # let's fallback to the from email in this case, which might cause more misses
+            # lets fallback to the message from_email in this case (this might cause more Outbox lookup failures)
             hack_alias = self.backend_alias + "???" + self.from_email
 
+        # this will open and cache a connection to the alias above
         connection = connections[hack_alias]
 
         if html_message:

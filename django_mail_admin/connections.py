@@ -24,11 +24,12 @@ class ConnectionHandler(object):
         except KeyError:
             pass
 
-        # as a hack other places are using backend_alias;;;from_oauth_user
+        # as a hack other places are using backend_alias;;;from_oauth_user. e.g. o365;;;email@example.com
         # or backend_alias???from_email
+        # previously it just used any outbox for the alias
         real_alias = maybe_hacked_alias
-        from_oauth_user = None
-        from_email = None
+        from_oauth_user: str | None = None
+        from_email: str | None = None
         if "???" in maybe_hacked_alias:
             real_alias,from_email = maybe_hacked_alias.split("???")
         elif ";;;" in maybe_hacked_alias:
