@@ -261,11 +261,11 @@ class GmailOAuth2Backend(EmailBackend):
     def lookup_email(self) -> str | None:
         return self.from_oauth_user or self.from_email
 
-    def _initialize_connection(self, from_email: str) -> None:
+    def _initialize_connection(self, from_oauth_email: str) -> None:
         """Initialize connection settings based on from_email"""
         configuration = Outbox.objects.filter(
             email_host__icontains="gmail",
-            email_host_user=self.lookup_email
+            email_host_user=from_oauth_email or self.lookup_email
         ).first()
 
         if not configuration:
@@ -273,6 +273,7 @@ class GmailOAuth2Backend(EmailBackend):
                 f"Unable to find an Outbox with email_host__icontains=gmail email_host_user={self.lookup_email} from_oauth_user={self.from_oauth_user} from_email={self.from_email}")
 
         self.configuration_id = configuration.id
+        self.from_oauth_user = from_oauth_email
 
         # Initialize settings from configuration
         self.host = configuration.email_host or "smtp.gmail.com"
