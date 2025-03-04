@@ -29,22 +29,22 @@ class ConnectionHandler(object):
         real_alias = maybe_hacked_alias
         from_email: str | None = None
         if ";;;" in maybe_hacked_alias:
-            real_alias,from_oauth_user = maybe_hacked_alias.split(";;;")
+            real_alias,from_email = maybe_hacked_alias.split(";;;")
 
         try:
-            backend = get_backend(real_alias)
+            backend_class = get_backend(real_alias)
         except KeyError:
             raise KeyError('%s is not a valid backend alias' % real_alias)
 
-        # backend_class is a EmailBackend subclass like O365Backend or GmailOAuth2Backend
-        backend_class = get_connection(backend)
+        # backend_instance is a EmailBackend subclass like O365Backend or GmailOAuth2Backend
+        backend_instance = get_connection(backend_class)
 
         # now mutate the backend class after init since get_connection is within django
-        backend_class.from_email = from_email
+        backend_instance.from_email = from_email
 
-        backend_class.open()
-        self._connections.connections[maybe_hacked_alias] = backend_class
-        return backend_class
+        backend_instance.open()
+        self._connections.connections[maybe_hacked_alias] = backend_instance
+        return backend_instance
 
     def all(self):
         return getattr(self._connections, 'connections', {}).values()
