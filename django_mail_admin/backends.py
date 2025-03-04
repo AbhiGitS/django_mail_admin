@@ -323,19 +323,15 @@ class GmailOAuth2Backend(EmailBackend):
             # sort by from_email to reduce connection opening
             email_messages = sorted(email_messages, key=lambda m: m.from_email)
 
-            from_email_to_oauth_cache = {}
             for message in email_messages:
                 try:
                     # hack way to get the original username
-                    if message.from_email in from_email_to_oauth_cache:
-                        oauth_username = from_email_to_oauth_cache[message.from_email]
-                    else:
-                        oauth_username = (
-                             EmailAddressOAuthMapping.objects.filter(send_as_email=message.from_email)
-                             .values_list('oauth_username', flat=True)
-                             .first()
-                        ) or message.from_email
-                        from_email_to_oauth_cache[message.from_email] = oauth_username
+                    # TODO: could do a cache here
+                    oauth_username = (
+                         EmailAddressOAuthMapping.objects.filter(send_as_email=message.from_email)
+                         .values_list('oauth_username', flat=True)
+                         .first()
+                    ) or message.from_email
 
                     # Check if we need to reinitialize for a different from_email
                     if (not self.connection or
