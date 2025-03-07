@@ -274,14 +274,16 @@ class GmailOAuth2Backend(EmailBackend):
             if self.use_tls:
                 self.connection.starttls()
 
+            query_uid = auth_uid or self.from_email
+
             user_social_auth = UserSocialAuth.objects.get(
-                uid=auth_uid,
+                uid=query_uid,
                 provider="google-oauth2"
             )
 
             creds_info = user_social_auth.extra_data
             auth_string = generate_oauth2_string(
-                auth_uid,
+                query_uid,
                 creds_info["access_token"],
                 base64_encode=False
             )
@@ -291,7 +293,7 @@ class GmailOAuth2Backend(EmailBackend):
             )
             return True
         except Exception:
-            logger.exception("gmail failed to open connection")
+            logger.exception(f"gmail failed to open connection: auth_uid={auth_uid} from_email={self.from_email}")
             return None
 
     def close(self):
