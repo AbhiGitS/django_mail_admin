@@ -17,7 +17,7 @@ from social_django.models import UserSocialAuth
 from django.core.mail.backends.base import BaseEmailBackend
 
 from django_mail_admin.o365_utils import O365Connection
-from django_mail_admin.google_utils import generate_oauth2_string
+from django_mail_admin.google_utils import generate_oauth2_string, refresh_authorization
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +247,16 @@ class GmailOAuth2Backend(EmailBackend):
                 f"Unable to find an Outbox with email_host__icontains=gmail email_host_user={from_email}"
             )
 
+        logger.info(
+            "Found a Gmail Outbox with: "
+            f"email_use_tls={configuration.email_use_tls} "
+            f"email_use_ssl={configuration.email_use_ssl} "
+            f"email_host={configuration.email_host} "
+            f"email_host_user={configuration.email_host_user} "
+            f"email_port={configuration.email_port} "
+            f"email_timeout={configuration.email_timeout} "
+        )
+
         self.configuration_id = configuration.id
         self.from_email = from_email
 
@@ -261,6 +271,18 @@ class GmailOAuth2Backend(EmailBackend):
         self.ssl_keyfile = configuration.email_ssl_keyfile
         self.ssl_certfile = configuration.email_ssl_certfile
 
+    def _connect_for_social_auth(self, user_social_auth: UserSocialAuth) -> None:
+        creds_info = user_social_auth.extra_data
+        auth_string = generate_oauth2_string(
+            user_social_auth.uid,
+            creds_info["access_token"],
+            base64_encode=False
+        )
+        self.connection.docmd(
+            "AUTH",
+            "XOAUTH2 " + base64.b64encode(auth_string.encode("utf-8")).decode("utf-8"),
+        )
+
     def open(self,auth_uid=None):
         """Override to use OAuth instead of password authentication"""
 
@@ -274,23 +296,22 @@ class GmailOAuth2Backend(EmailBackend):
             if self.use_tls:
                 self.connection.starttls()
 
-            query_uid = auth_uid or self.from_email
-
             user_social_auth = UserSocialAuth.objects.get(
-                uid=query_uid,
+                uid=auth_uid or self.from_email,
                 provider="google-oauth2"
             )
 
-            creds_info = user_social_auth.extra_data
-            auth_string = generate_oauth2_string(
-                query_uid,
-                creds_info["access_token"],
-                base64_encode=False
-            )
-            self.connection.docmd(
-                "AUTH",
-                "XOAUTH2 " + base64.b64encode(auth_string.encode("utf-8")).decode("utf-8"),
-            )
+            logger.info(f"Found UserSocialAuth with pk={user_social_auth.pk} uid={user_social_auth.uid}")
+
+            try:
+                self._connect_for_social_auth(user_social_auth)
+            except Exception as e:
+                # TODO: we can avoid an except on all exceptions
+                # and we can proactively refresh based on expiring soon
+                # but we currently don't store access token expiration date
+                logger.exception(f"Failed connecting via OAuth. Attemping a token refresh for UserSocialAuth.uid={user_social_auth.uid}")
+                updated_social_auth = refresh_authorization(user_social_auth.uid)
+                self._connect_for_social_auth(updated_social_auth)
             return True
         except Exception:
             logger.exception(f"gmail failed to open connection: auth_uid={auth_uid} from_email={self.from_email}")
@@ -303,9 +324,13 @@ class GmailOAuth2Backend(EmailBackend):
         try:
             try:
                 self.connection.quit()
-            except (ssl.SSLError, smtplib.SMTPServerDisconnected):
+                logger.info(f"Connection quit for {self.from_email}")
+            except (ssl.SSLError, smtplib.SMTPServerDisconnected) as e:
+                logger.exception(f"Exception while quitting a connection for {self.from_email}: {e}")
                 self.connection.close()
-            except smtplib.SMTPException:
+                logger.info(f"Connection closed for {self.from_email}")
+            except smtplib.SMTPException as e:
+                logger.exception(f"SMTPException while quitting a connection for {self.from_email}: {e}")
                 if self.fail_silently:
                     return
                 raise
@@ -329,6 +354,29 @@ class GmailOAuth2Backend(EmailBackend):
                 try:
                     # hack way to get the original username
                     # TODO: could do a cache here
+                    # not all accounts are in EmailAddressOAuthMapping. but here's how one:
+                    #
+                    # EmailAddressOAuthMapping: oauth_username=company_oauth@g.company.ai send_as_email=person@customer.com
+                    # UserSocialAuth: uid=company_oauth@g.company.ai provider=google-oauth2 created=2024-09-22 16:32:46.641390+00:00 modified=2025-03-07 17:52:45.714140+00:00
+                    # OutgoingEmail: id=545 from_email=person@customer.com created=2025-03-07 01:00:00.824912+00:00 last_updated=2025-03-07 01:00:00.824923+00:00
+                    # Outbox: email_host_user=company_oauth@g.company.ai email_host=smtp.gmail.com
+                    #
+                    # so for a OutgoingEmail from person@customer.com
+                    # we get EmailAddressOAuthMapping with send_as_email from person@customer.com
+                    # which has an EmailAddressOAuthMapping.oauth_username of company_oauth@g.company.ai, which maps to Outbox.email_host_user=company_oauth@g.company.ai
+                    # and UserSocialAuth: uid=company_oauth@g.company.ai
+                    #
+                    # another example without EmailAddressOAuthMapping:
+                    #
+                    # UserSocialAuth: uid=customer2@g.company.ai provider=google-oauth2 created=2025-02-04 17:45:13.116982+00:00 modified=2025-03-07 17:52:00.138284+00:00
+                    # UserSocialAuth: uid=company@customer2.com provider=google-oauth2 created=2025-02-03 18:47:19.157579+00:00 modified=2025-03-07 17:52:01.547400+00:00
+                    # OutgoingEmail: id=546 from_email=company@customer2.com created=2025-03-07 01:00:00.898387+00:00 last_updated=2025-03-07 16:25:05.930577+00:00
+                    # Outbox: email_host_user=customer2@g.company.ai email_host=smtp.gmail.com
+                    # Outbox: email_host_user=company@customer2.com email_host=smtp.gmail.com
+                    #
+                    # OutgoingEmail is from company@customer2.com
+                    # which maps to the Outbox of company@customer2.com
+                    # and UserSocialAuth: uid=company@customer2.com
                     oauth_username = (
                          EmailAddressOAuthMapping.objects.filter(send_as_email=message.from_email)
                          .values_list('oauth_username', flat=True)
@@ -340,12 +388,27 @@ class GmailOAuth2Backend(EmailBackend):
                         self.from_email != oauth_username or
                         not self.configuration_id):
 
+                        logger.info(
+                            f"Opening a new connection in send_messages: "
+                            f"self.from_email={self.from_email} "
+                            f"oauth_username={oauth_username} "
+                            f"connection_exists={bool(self.connection)} "
+                            f"configuration_id_exists={bool(self.configuration_id)} "
+                        )
+
                         self.close()
                         # TODO: we could leverage a connection cache rather than re-init each time
                         self._initialize_connection(oauth_username)
                         new_conn_created = self.open(auth_uid=oauth_username)
 
                         if not self.connection or new_conn_created is None:
+                            logger.info(
+                                f"No connection available (skipping): "
+                                f"self.from_email={self.from_email} "
+                                f"oauth_username={oauth_username} "
+                                f"connection_exists={bool(self.connection)} "
+                                f"new_conn_created={bool(new_conn_created)} "
+                            )
                             continue
 
                     if self._send(message):

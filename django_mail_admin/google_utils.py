@@ -35,11 +35,12 @@ def get_google_access_token(email):
         raise AccessTokenNotFound
 
 
-def update_google_extra_data(email, extra_data):
+def update_google_extra_data(email_or_auth_uid: str, extra_data) -> UserSocialAuth:
     try:
-        me = UserSocialAuth.objects.get(uid=email, provider="google-oauth2")
+        me = UserSocialAuth.objects.get(uid=email_or_auth_uid, provider="google-oauth2")
         me.extra_data = extra_data
         me.save()
+        return me
     except (UserSocialAuth.DoesNotExist, KeyError):
         raise AccessTokenNotFound
 
@@ -93,7 +94,7 @@ def google_api_post(email, url, post_data, authorized=True):
         raise Exception("google_api_post ended with a %s" % r.status_code)
 
 
-def refresh_authorization(email):
+def refresh_authorization(email: str) -> UserSocialAuth:
     refresh_token = get_google_refresh_token(email)
     post_data = dict(
         refresh_token=refresh_token,
@@ -108,7 +109,7 @@ def refresh_authorization(email):
         authorized=False,
     )
     results.update({"refresh_token": refresh_token})
-    update_google_extra_data(email, results)
+    return update_google_extra_data(email, results)
 
 
 def fetch_user_info(email):

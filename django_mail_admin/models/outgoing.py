@@ -1,4 +1,5 @@
 import logging
+import traceback
 
 from django.core.files import File
 from django.core.mail import EmailMessage, EmailMultiAlternatives
@@ -217,7 +218,7 @@ class OutgoingEmail(models.Model):
             email_sent.send(sender=self, outgoing_email=email_message)
         except Exception as e:
             status = STATUS.failed
-            message = str(e)
+            message = str(e) + " -- " + traceback.format_exc()
             exception_type = type(e).__name__
             if email_message:
                 email_failed_to_send.send(sender=self, outgoing_email=email_message)
