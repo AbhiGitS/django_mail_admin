@@ -291,6 +291,8 @@ class GmailOAuth2Backend(EmailBackend):
                 provider="google-oauth2"
             )
 
+            logger.info(f"Found UserSocialAuth with pk={user_social_auth.pk} uid={user_social_auth.uid}")
+
             creds_info = user_social_auth.extra_data
             auth_string = generate_oauth2_string(
                 query_uid,
