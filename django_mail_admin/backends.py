@@ -17,7 +17,7 @@ from social_django.models import UserSocialAuth
 from django.core.mail.backends.base import BaseEmailBackend
 
 from django_mail_admin.o365_utils import O365Connection
-from django_mail_admin.google_utils import generate_oauth2_string
+from django_mail_admin.google_utils import generate_oauth2_string, refresh_authorization
 
 logger = logging.getLogger(__name__)
 
@@ -271,6 +271,18 @@ class GmailOAuth2Backend(EmailBackend):
         self.ssl_keyfile = configuration.email_ssl_keyfile
         self.ssl_certfile = configuration.email_ssl_certfile
 
+    def _connect_for_social_auth(self, user_social_auth: UserSocialAuth) -> None:
+        creds_info = user_social_auth.extra_data
+        auth_string = generate_oauth2_string(
+            user_social_auth.uid,
+            creds_info["access_token"],
+            base64_encode=False
+        )
+        self.connection.docmd(
+            "AUTH",
+            "XOAUTH2 " + base64.b64encode(auth_string.encode("utf-8")).decode("utf-8"),
+        )
+
     def open(self,auth_uid=None):
         """Override to use OAuth instead of password authentication"""
 
@@ -284,25 +296,22 @@ class GmailOAuth2Backend(EmailBackend):
             if self.use_tls:
                 self.connection.starttls()
 
-            query_uid = auth_uid or self.from_email
-
             user_social_auth = UserSocialAuth.objects.get(
-                uid=query_uid,
+                uid=auth_uid or self.from_email,
                 provider="google-oauth2"
             )
 
             logger.info(f"Found UserSocialAuth with pk={user_social_auth.pk} uid={user_social_auth.uid}")
 
-            creds_info = user_social_auth.extra_data
-            auth_string = generate_oauth2_string(
-                query_uid,
-                creds_info["access_token"],
-                base64_encode=False
-            )
-            self.connection.docmd(
-                "AUTH",
-                "XOAUTH2 " + base64.b64encode(auth_string.encode("utf-8")).decode("utf-8"),
-            )
+            try:
+                self._connect_for_social_auth(user_social_auth)
+            except Exception as e:
+                # TODO: we can avoid an except on all exceptions
+                # and we can proactively refresh based on expiring soon
+                # but we currently don't store access token expiration date
+                logger.exception(f"Failed connecting via OAuth. Attemping a token refresh for UserSocialAuth.uid={user_social_auth.uid}")
+                updated_social_auth = refresh_authorization(user_social_auth.uid)
+                self._connect_for_social_auth(updated_social_auth)
             return True
         except Exception:
             logger.exception(f"gmail failed to open connection: auth_uid={auth_uid} from_email={self.from_email}")
