@@ -247,6 +247,16 @@ class GmailOAuth2Backend(EmailBackend):
                 f"Unable to find an Outbox with email_host__icontains=gmail email_host_user={from_email}"
             )
 
+        logger.info(
+            "Found a Gmail Outbox with: "
+            f"email_use_tls={configuration.email_use_tls}"
+            f"email_use_ssl={configuration.email_use_ssl}"
+            f"email_host={configuration.email_host}"
+            f"email_host_user={configuration.email_host_user}"
+            f"email_port={configuration.email_port}"
+            f"email_timeout={configuration.email_timeout}"
+        )
+
         self.configuration_id = configuration.id
         self.from_email = from_email
 
@@ -329,6 +339,29 @@ class GmailOAuth2Backend(EmailBackend):
                 try:
                     # hack way to get the original username
                     # TODO: could do a cache here
+                    # not all accounts are in EmailAddressOAuthMapping. but here's how one:
+                    #
+                    # EmailAddressOAuthMapping: oauth_username=company_oauth@g.company.ai send_as_email=person@customer.com
+                    # UserSocialAuth: uid=company_oauth@g.company.ai provider=google-oauth2 created=2024-09-22 16:32:46.641390+00:00 modified=2025-03-07 17:52:45.714140+00:00
+                    # OutgoingEmail: id=545 from_email=person@customer.com created=2025-03-07 01:00:00.824912+00:00 last_updated=2025-03-07 01:00:00.824923+00:00
+                    # Outbox: email_host_user=company_oauth@g.company.ai email_host=smtp.gmail.com
+                    #
+                    # so for a OutgoingEmail from person@customer.com
+                    # we get EmailAddressOAuthMapping with send_as_email from person@customer.com
+                    # which has an EmailAddressOAuthMapping.oauth_username of company_oauth@g.company.ai, which maps to Outbox.email_host_user=company_oauth@g.company.ai
+                    # and UserSocialAuth: uid=company_oauth@g.company.ai
+                    #
+                    # another example without EmailAddressOAuthMapping:
+                    #
+                    # UserSocialAuth: uid=customer2@g.company.ai provider=google-oauth2 created=2025-02-04 17:45:13.116982+00:00 modified=2025-03-07 17:52:00.138284+00:00
+                    # UserSocialAuth: uid=company@customer2.com provider=google-oauth2 created=2025-02-03 18:47:19.157579+00:00 modified=2025-03-07 17:52:01.547400+00:00
+                    # OutgoingEmail: id=546 from_email=company@customer2.com created=2025-03-07 01:00:00.898387+00:00 last_updated=2025-03-07 16:25:05.930577+00:00
+                    # Outbox: email_host_user=customer2@g.company.ai email_host=smtp.gmail.com
+                    # Outbox: email_host_user=company@customer2.com email_host=smtp.gmail.com
+                    #
+                    # OutgoingEmail is from company@customer2.com
+                    # which maps to the Outbox of company@customer2.com
+                    # and UserSocialAuth: uid=company@customer2.com
                     oauth_username = (
                          EmailAddressOAuthMapping.objects.filter(send_as_email=message.from_email)
                          .values_list('oauth_username', flat=True)
@@ -340,12 +373,27 @@ class GmailOAuth2Backend(EmailBackend):
                         self.from_email != oauth_username or
                         not self.configuration_id):
 
+                        logger.info(
+                            f"Opening a new connection in send_messages:"
+                            f"self.from_email={self.from_email}"
+                            f"oauth_username={oauth_username} "
+                            f"connection_exists={bool(self.connection)}"
+                            f"configuration_id_exists={bool(self.configuration_id)}"
+                        )
+
                         self.close()
                         # TODO: we could leverage a connection cache rather than re-init each time
                         self._initialize_connection(oauth_username)
                         new_conn_created = self.open(auth_uid=oauth_username)
 
                         if not self.connection or new_conn_created is None:
+                            logger.info(
+                                f"No connection available (skipping):"
+                                f"self.from_email={self.from_email}"
+                                f"oauth_username={oauth_username} "
+                                f"connection_exists={bool(self.connection)}"
+                                f"new_conn_created={bool(new_conn_created)}"
+                            )
                             continue
 
                     if self._send(message):
