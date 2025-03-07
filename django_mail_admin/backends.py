@@ -249,12 +249,12 @@ class GmailOAuth2Backend(EmailBackend):
 
         logger.info(
             "Found a Gmail Outbox with: "
-            f"email_use_tls={configuration.email_use_tls}"
-            f"email_use_ssl={configuration.email_use_ssl}"
-            f"email_host={configuration.email_host}"
-            f"email_host_user={configuration.email_host_user}"
-            f"email_port={configuration.email_port}"
-            f"email_timeout={configuration.email_timeout}"
+            f"email_use_tls={configuration.email_use_tls} "
+            f"email_use_ssl={configuration.email_use_ssl} "
+            f"email_host={configuration.email_host} "
+            f"email_host_user={configuration.email_host_user} "
+            f"email_port={configuration.email_port} "
+            f"email_timeout={configuration.email_timeout} "
         )
 
         self.configuration_id = configuration.id
@@ -313,9 +313,13 @@ class GmailOAuth2Backend(EmailBackend):
         try:
             try:
                 self.connection.quit()
-            except (ssl.SSLError, smtplib.SMTPServerDisconnected):
+                logger.info(f"Connection quit for {self.from_email}")
+            except (ssl.SSLError, smtplib.SMTPServerDisconnected) as e:
+                logger.exception(f"Exception while quitting a connection for {self.from_email}: {e}")
                 self.connection.close()
-            except smtplib.SMTPException:
+                logger.info(f"Connection closed for {self.from_email}")
+            except smtplib.SMTPException as e:
+                logger.exception(f"SMTPException while quitting a connection for {self.from_email}: {e}")
                 if self.fail_silently:
                     return
                 raise
@@ -374,11 +378,11 @@ class GmailOAuth2Backend(EmailBackend):
                         not self.configuration_id):
 
                         logger.info(
-                            f"Opening a new connection in send_messages:"
-                            f"self.from_email={self.from_email}"
+                            f"Opening a new connection in send_messages: "
+                            f"self.from_email={self.from_email} "
                             f"oauth_username={oauth_username} "
-                            f"connection_exists={bool(self.connection)}"
-                            f"configuration_id_exists={bool(self.configuration_id)}"
+                            f"connection_exists={bool(self.connection)} "
+                            f"configuration_id_exists={bool(self.configuration_id)} "
                         )
 
                         self.close()
@@ -388,11 +392,11 @@ class GmailOAuth2Backend(EmailBackend):
 
                         if not self.connection or new_conn_created is None:
                             logger.info(
-                                f"No connection available (skipping):"
-                                f"self.from_email={self.from_email}"
+                                f"No connection available (skipping): "
+                                f"self.from_email={self.from_email} "
                                 f"oauth_username={oauth_username} "
-                                f"connection_exists={bool(self.connection)}"
-                                f"new_conn_created={bool(new_conn_created)}"
+                                f"connection_exists={bool(self.connection)} "
+                                f"new_conn_created={bool(new_conn_created)} "
                             )
                             continue
 
