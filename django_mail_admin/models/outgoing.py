@@ -9,6 +9,7 @@ from django.utils.encoding import force_str
 from django.utils.translation import gettext_lazy as _
 from jsonfield import JSONField
 
+from django_mail_admin.models.configurations import Outbox
 from django_mail_admin.connections import connections
 from django_mail_admin.fields import CommaSeparatedEmailField
 from django_mail_admin.settings import get_log_level, get_backend_names_str
@@ -139,7 +140,8 @@ class OutgoingEmail(models.Model):
         else:
             # we effectively always want an outbox passed in but keeping this for compatability
             # lets fallback to the message from_email in this case (this might cause more Outbox lookup failures)
-            hack_alias = self.backend_alias + ";;;" + self.from_email
+            outbox = Outbox.objects.filter(email_host_user__iexact=self.from_email).first()
+            hack_alias = self.backend_alias + ";;;" + outbox.email_host_user if outbox else self.from_email
 
         # this will open and cache a connection to the alias above
         # maybe remove this and only open a connection on send

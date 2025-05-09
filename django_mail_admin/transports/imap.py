@@ -1,5 +1,6 @@
 import imaplib
 import logging
+import time
 
 from django.conf import settings
 
@@ -130,6 +131,75 @@ class ImapTransport(EmailTransport):
             if self.archive:
                 self.server.uid('copy', uid, self.archive)
 
-            self.server.uid('store', uid, "+FLAGS", "(\\Deleted)")
-        self.server.expunge()
+            #self.server.uid('store', uid, "+FLAGS", "(\\Deleted)") # do not delete
+        #self.server.expunge() # do not worry about deleted message handling.
         return
+
+    def store_message_in_folder(self, folder_name, msg, flags='') -> bool:
+        if not all([folder_name, msg]):
+            return False
+        try:
+            status, response = self.server.create(folder_name)
+            if status == "OK":
+                logger.info(f"Folder created: {folder_name}")
+            else:
+                pass
+                #logger.info(f"Failed to create folder: {folder_name}. Server said: {response}")
+            typ, data = self.server.append(
+                folder_name, 
+                flags,
+                imaplib.Time2Internaldate(time.time()), 
+                msg.as_bytes()
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Error storing msg to imap folder_name: {folder_name}: error: {e}")
+            return False
+
+    def _detect_imap_folder_path_separator(self, decoded_folder_name:str) -> str:
+        parts = decoded_folder_name.split(" ")
+        if len(parts) < 3:
+            sep_char = "/"
+        else:
+            sep_char = parts[1].strip('"')
+        return f' "{sep_char}" '
+
+    def get_sent_folder_name(self) -> str | None:
+        path_separators = "/"
+        status, folders = self.server.list()
+        sent_candidates = []
+        separator = self._detect_imap_folder_path_separator(folders[0].decode()) if folders else None
+
+        for folder_raw in folders:
+            decoded = folder_raw.decode()
+            
+            # Example line1: '(\HasNoChildren \Sent) "/" "Sent Items"'
+            if "\\Sent" in decoded:
+                # Extract folder name (quoted at the end)
+                folder_name = decoded.split(separator)[-1].strip('"')
+                sent_candidates.append(folder_name)
+
+        # Fallback: try common names if \Sent flag was not found
+        if not sent_candidates:
+            # Example line2: '(\HasNoChildren \\Exists) "." "INBBOX.Sent"'
+            common_names = [
+                "Sent", "Sent Mail", "Sent Messages",
+                "[Gmail]/Sent Mail", "INBOX.Sent", "Sent Items"
+            ]
+            found_name = False
+            for folder_raw in folders:
+                if found_name:
+                    break
+                folder_line = folder_raw.decode()
+                for name in common_names:
+                    if name in folder_line:
+                        folder_name = folder_line.split(separator)[-1].strip('"')
+                        # If not already quoted and contains spaces, quote it
+                        if not folder_name.startswith('"') and ' ' in folder_name:
+                            folder_name = f'"{folder_name}"'
+                        sent_candidates.append(folder_name)
+                        found_name = True
+                        break
+
+        # Pick first match, or none
+        return sent_candidates[0] if sent_candidates else None

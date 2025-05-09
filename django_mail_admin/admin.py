@@ -113,7 +113,7 @@ def send_queued_mail(outbox_admin, request, queryset):
 
                 while 1:
                     try:
-                        send_queued(default_processes, default_log_level)
+                        send_queued(outbox, default_processes, default_log_level)
                     except Exception as e:
                         logger.error(
                             e, exc_info=sys.exc_info(), extra={"status_code": 500}
@@ -124,7 +124,7 @@ def send_queued_mail(outbox_admin, request, queryset):
                     connection.close()
 
                     if (
-                        not OutgoingEmail.objects.filter(status=STATUS.queued)
+                        not OutgoingEmail.objects.filter(status=STATUS.queued, from_email__iexact=outbox.email_host_user)
                         .filter(Q(scheduled_time__lte=now()) | Q(scheduled_time=None))
                         .exists()
                     ):

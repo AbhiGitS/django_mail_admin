@@ -129,7 +129,8 @@ INSTALLED_APPS += ("django_admin_row_actions",)
 
 DJANGO_MAIL_ADMIN = {
     "BACKENDS": {
-        "default": "django_mail_admin.backends.GmailOAuth2Backend",  #'django_mail_admin.backends.CustomEmailBackend',
+        "default": "django_mail_admin.backends.GmailOAuth2Backend",
+        "smtpoutbox":"django_mail_admin.backends.SMTPOutboxBackend",
         "smtp": "django.core.mail.backends.smtp.EmailBackend",
         "o365": "django_mail_admin.backends.O365Backend",
         "gmail": "django_mail_admin.backends.GmailOAuth2Backend",
