@@ -8,9 +8,12 @@ from urllib import parse
 
 from django.core.mail.backends.smtp import EmailBackend
 from django_mail_admin.models.outgoing import EmailAddressOAuthMapping
+from django_mail_admin.transports import (
+    ImapTransport,
+)
 
 from .mail import create
-from .models import Outbox, create_attachments
+from .models import Outbox, Mailbox, create_attachments
 from .utils import PRIORITY
 
 from social_django.models import UserSocialAuth
@@ -66,6 +69,131 @@ class CustomEmailBackend(EmailBackend):
         self.connection = None
         self._lock = threading.RLock()
 
+
+class SMTPOutboxBackend(EmailBackend):
+    def __init__(
+        self,
+        host=None,
+        port=None,
+        username=None,
+        password=None,
+        use_tls=None,
+        fail_silently=False,
+        use_ssl=None,
+        timeout=None,
+        ssl_keyfile=None,
+        ssl_certfile=None,
+        **kwargs,
+    ):
+        super(SMTPOutboxBackend, self).__init__(fail_silently=fail_silently)
+        self.host = None
+        self.port = None
+        self.username = None
+        self.password = None
+        self.use_tls = None
+        self.use_ssl = None
+        self.timeout = None
+        self.ssl_keyfile = None
+        self.ssl_certfile = None
+        self.conn: Optional[SMTPOutboxBackend] | None = None
+        self.connection = None
+        # from_email might be hydrated by us (ChargeUp) in a few scenarios:
+        # 1. after class __init__ (Django will create this class so we can't add directly to __init__)
+        # 2. during email sending when a new connection needs to be opened
+        self.from_email: str | None = None
+        self.configuration_id: Optional[int] = None
+
+        self._lock = threading.RLock()
+
+    def close(self):
+        """Closes and cleans up the current connection"""
+        with self._lock:
+            if self.conn:
+                self.conn = None
+                self.from_email = None
+                self.configuration_id = None
+            super().close()
+
+    def open(self):
+        with self._lock:
+            configuration = Outbox.objects.filter(
+                email_host_user__iexact=self.from_email #ignore case
+            ).first()
+
+            if not configuration:
+                raise ValueError(f"Unable to find an Outbox with email_host_user={self.from_email}")
+
+            # existing saved connection is valid. no need for a new one
+            if self.configuration_id and self.configuration_id == configuration.id:
+                return
+            elif self.configuration_id:
+                # close the existing invalid connection
+                self.from_email = configuration.email_host_user
+                self.configuration_id = configuration.id
+
+            self.host = configuration.email_host
+            self.port = configuration.email_port
+            self.username = configuration.email_host_user
+            self.password = configuration.email_host_password 
+            self.use_tls = configuration.email_use_tls
+            self.use_ssl = configuration.email_use_ssl
+            self.timeout = configuration.email_timeout
+            self.ssl_keyfile = configuration.email_ssl_keyfile
+            self.ssl_certfile = configuration.email_ssl_certfile
+
+            return super().open()
+
+    def _get_imap_sent_folder_name(self, imap_transport:ImapTransport|None) -> str | None:
+        sent_folder: str | None = None
+        try: 
+            if imap_transport:
+                sent_folder = imap_transport.get_sent_folder_name()
+        except Exception as e:
+            logger.error(f"Error retrieving sent folder name: imap_transport: {imap_transport},error: {e}")
+            sent_folder = None
+        return sent_folder
+
+    def _get_imap_transport(self) -> ImapTransport | None:
+        imap_transport: ImapTransport | None = None
+        try:
+            imap_mailbox: Mailbox | None = None
+            for imap_mailbox in Mailbox.objects.filter(
+                from_email__iexact=self.from_email
+            ).all():
+                if imap_mailbox and "imap" == imap_mailbox.type:
+                    break
+            if imap_mailbox and "imap" == imap_mailbox.type:
+                imap_transport = imap_mailbox.get_connection()
+        except Exception as e:
+            logger.error(f"Error retrieving imap_transport: {e}")
+            imap_transport = None
+        return imap_transport
+
+    def send_messages(self, email_messages) -> int:
+        """
+        Sends email messages via underlying SMTP connection and saves the same to Sent folder
+
+        SMTP only sends messages, do not deal with ensuring a copy is stored in sent folder
+        """
+        if not email_messages:
+            return 0
+        num_sent_ok=0
+        with self._lock:
+            imap_transport: ImapTransport | None = self._get_imap_transport()
+            sent_folder: str | None = self._get_imap_sent_folder_name(imap_transport)
+            for email_message in email_messages:
+                """
+                num_sent = super().send_messages([email_message])
+                if 1 != num_sent:
+                    continue
+                """
+                if imap_transport and sent_folder:
+                    imap_transport.store_message_in_folder(
+                        sent_folder, 
+                        email_message.message()
+                    ) # not sending any flags
+                num_sent_ok+=1
+        return num_sent_ok
 
 class OutboxEmailBackend(BaseEmailBackend):
     def send_messages(self, email_messages):
@@ -130,7 +258,7 @@ class O365Backend(EmailBackend):
         with self._lock:
             configuration = Outbox.objects.filter(
                 email_host__icontains="office365",
-                email_host_user=self.from_email
+                email_host_user__iexact=self.from_email #ignore case
             ).first()
 
             if not configuration:
