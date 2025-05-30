@@ -46,8 +46,7 @@ class CustomEmailBackend(EmailBackend):
         configurations = Outbox.objects.filter(active=True)
         if len(configurations) > 1 or len(configurations) == 0:
             raise ValueError(
-                "Got %(l)s active Outboxes, expected 1"
-                % {"l": len(configurations)}
+                "Got %(l)s active Outboxes, expected 1" % {"l": len(configurations)}
             )
         else:
             configuration = configurations.first()
@@ -117,11 +116,13 @@ class SMTPOutboxBackend(EmailBackend):
     def open(self):
         with self._lock:
             configuration = Outbox.objects.filter(
-                email_host_user__iexact=self.from_email #ignore case
+                email_host_user__iexact=self.from_email  # ignore case
             ).first()
 
             if not configuration:
-                raise ValueError(f"Unable to find an Outbox with email_host_user={self.from_email}")
+                raise ValueError(
+                    f"Unable to find an Outbox with email_host_user={self.from_email}"
+                )
 
             # existing saved connection is valid. no need for a new one
             if self.configuration_id and self.configuration_id == configuration.id:
@@ -134,7 +135,7 @@ class SMTPOutboxBackend(EmailBackend):
             self.host = configuration.email_host
             self.port = configuration.email_port
             self.username = configuration.email_host_user
-            self.password = configuration.email_host_password 
+            self.password = configuration.email_host_password
             self.use_tls = configuration.email_use_tls
             self.use_ssl = configuration.email_use_ssl
             self.timeout = configuration.email_timeout
@@ -143,13 +144,17 @@ class SMTPOutboxBackend(EmailBackend):
 
             return super().open()
 
-    def _get_imap_sent_folder_name(self, imap_transport:ImapTransport|None) -> str | None:
+    def _get_imap_sent_folder_name(
+        self, imap_transport: ImapTransport | None
+    ) -> str | None:
         sent_folder: str | None = None
-        try: 
+        try:
             if imap_transport:
                 sent_folder = imap_transport.get_sent_folder_name()
         except Exception as e:
-            logger.error(f"Error retrieving sent folder name: imap_transport: {imap_transport},error: {e}")
+            logger.error(
+                f"Error retrieving sent folder name: imap_transport: {imap_transport},error: {e}"
+            )
             sent_folder = None
         return sent_folder
 
@@ -177,23 +182,21 @@ class SMTPOutboxBackend(EmailBackend):
         """
         if not email_messages:
             return 0
-        num_sent_ok=0
+        num_sent_ok = 0
         with self._lock:
             imap_transport: ImapTransport | None = self._get_imap_transport()
             sent_folder: str | None = self._get_imap_sent_folder_name(imap_transport)
             for email_message in email_messages:
-                """
                 num_sent = super().send_messages([email_message])
                 if 1 != num_sent:
                     continue
-                """
                 if imap_transport and sent_folder:
                     imap_transport.store_message_in_folder(
-                        sent_folder, 
-                        email_message.message()
-                    ) # not sending any flags
-                num_sent_ok+=1
+                        sent_folder, email_message.message()
+                    )  # not sending any flags
+                num_sent_ok += 1
         return num_sent_ok
+
 
 class OutboxEmailBackend(BaseEmailBackend):
     def send_messages(self, email_messages):
@@ -231,6 +234,7 @@ class O365Backend(EmailBackend):
     """
     Backend to handle sending emails via o365 connection
     """
+
     def __init__(self, fail_silently: bool = False, **kwargs) -> None:
         super().__init__(fail_silently, **kwargs)
         self.conn: Optional[O365Connection] = None
@@ -258,11 +262,13 @@ class O365Backend(EmailBackend):
         with self._lock:
             configuration = Outbox.objects.filter(
                 email_host__icontains="office365",
-                email_host_user__iexact=self.from_email #ignore case
+                email_host_user__iexact=self.from_email,  # ignore case
             ).first()
 
             if not configuration:
-                raise ValueError(f"Unable to find an Outbox with email_host__icontains=office365 email_host_user={self.from_email}")
+                raise ValueError(
+                    f"Unable to find an Outbox with email_host__icontains=office365 email_host_user={self.from_email}"
+                )
 
             # existing saved connection is valid. no need for a new one
             if self.conn and self.configuration_id == configuration.id:
@@ -313,13 +319,15 @@ class O365Backend(EmailBackend):
                 try:
                     # Use EmailAddressOAuthMapping to find oauth_username
                     oauth_username = (
-                        EmailAddressOAuthMapping.objects.filter(send_as_email=msg.from_email)
-                        .values_list('oauth_username', flat=True)
+                        EmailAddressOAuthMapping.objects.filter(
+                            send_as_email=msg.from_email
+                        )
+                        .values_list("oauth_username", flat=True)
                         .first()
                     ) or msg.from_email
 
                     # If connection doesn't match this message's configuration, create new connection
-                    if (not self.conn or self.from_email != oauth_username):
+                    if not self.conn or self.from_email != oauth_username:
                         self.close()
                         self.from_email = oauth_username
                         # TODO: we could leverage a connection cache rather than re-init each time
@@ -332,7 +340,9 @@ class O365Backend(EmailBackend):
                 except Exception as e:
                     if not self.fail_silently:
                         raise
-                    logger.error(f"Failed to send message from {msg.from_email}: {str(e)}")
+                    logger.error(
+                        f"Failed to send message from {msg.from_email}: {str(e)}"
+                    )
 
             return sent_count
 
@@ -366,8 +376,7 @@ class GmailOAuth2Backend(EmailBackend):
     def _initialize_connection(self, from_email: str) -> None:
         """Initialize connection settings based on from_email"""
         configuration = Outbox.objects.filter(
-            email_host__icontains="gmail",
-            email_host_user=from_email
+            email_host__icontains="gmail", email_host_user=from_email
         ).first()
 
         if not configuration:
@@ -402,34 +411,37 @@ class GmailOAuth2Backend(EmailBackend):
     def _connect_for_social_auth(self, user_social_auth: UserSocialAuth) -> None:
         creds_info = user_social_auth.extra_data
         auth_string = generate_oauth2_string(
-            user_social_auth.uid,
-            creds_info["access_token"],
-            base64_encode=False
+            user_social_auth.uid, creds_info["access_token"], base64_encode=False
         )
         self.connection.docmd(
             "AUTH",
             "XOAUTH2 " + base64.b64encode(auth_string.encode("utf-8")).decode("utf-8"),
         )
 
-    def open(self,auth_uid=None):
+    def open(self, auth_uid=None):
         """Override to use OAuth instead of password authentication"""
 
         try:
             # First establish the SMTP connection
             if self.use_ssl:
-                self.connection = smtplib.SMTP_SSL(self.host, self.port, timeout=self.timeout)
+                self.connection = smtplib.SMTP_SSL(
+                    self.host, self.port, timeout=self.timeout
+                )
             else:
-                self.connection = smtplib.SMTP(self.host, self.port, timeout=self.timeout)
+                self.connection = smtplib.SMTP(
+                    self.host, self.port, timeout=self.timeout
+                )
 
             if self.use_tls:
                 self.connection.starttls()
 
             user_social_auth = UserSocialAuth.objects.get(
-                uid=auth_uid or self.from_email,
-                provider="google-oauth2"
+                uid=auth_uid or self.from_email, provider="google-oauth2"
             )
 
-            logger.info(f"Found UserSocialAuth with pk={user_social_auth.pk} uid={user_social_auth.uid}")
+            logger.info(
+                f"Found UserSocialAuth with pk={user_social_auth.pk} uid={user_social_auth.uid}"
+            )
 
             try:
                 self._connect_for_social_auth(user_social_auth)
@@ -437,12 +449,16 @@ class GmailOAuth2Backend(EmailBackend):
                 # TODO: we can avoid an except on all exceptions
                 # and we can proactively refresh based on expiring soon
                 # but we currently don't store access token expiration date
-                logger.exception(f"Failed connecting via OAuth. Attemping a token refresh for UserSocialAuth.uid={user_social_auth.uid}")
+                logger.exception(
+                    f"Failed connecting via OAuth. Attemping a token refresh for UserSocialAuth.uid={user_social_auth.uid}"
+                )
                 updated_social_auth = refresh_authorization(user_social_auth.uid)
                 self._connect_for_social_auth(updated_social_auth)
             return True
         except Exception:
-            logger.exception(f"gmail failed to open connection: auth_uid={auth_uid} from_email={self.from_email}")
+            logger.exception(
+                f"gmail failed to open connection: auth_uid={auth_uid} from_email={self.from_email}"
+            )
             return None
 
     def close(self):
@@ -454,11 +470,15 @@ class GmailOAuth2Backend(EmailBackend):
                 self.connection.quit()
                 logger.info(f"Connection quit for {self.from_email}")
             except (ssl.SSLError, smtplib.SMTPServerDisconnected) as e:
-                logger.exception(f"Exception while quitting a connection for {self.from_email}: {e}")
+                logger.exception(
+                    f"Exception while quitting a connection for {self.from_email}: {e}"
+                )
                 self.connection.close()
                 logger.info(f"Connection closed for {self.from_email}")
             except smtplib.SMTPException as e:
-                logger.exception(f"SMTPException while quitting a connection for {self.from_email}: {e}")
+                logger.exception(
+                    f"SMTPException while quitting a connection for {self.from_email}: {e}"
+                )
                 if self.fail_silently:
                     return
                 raise
@@ -506,15 +526,19 @@ class GmailOAuth2Backend(EmailBackend):
                     # which maps to the Outbox of company@customer2.com
                     # and UserSocialAuth: uid=company@customer2.com
                     oauth_username = (
-                         EmailAddressOAuthMapping.objects.filter(send_as_email=message.from_email)
-                         .values_list('oauth_username', flat=True)
-                         .first()
+                        EmailAddressOAuthMapping.objects.filter(
+                            send_as_email=message.from_email
+                        )
+                        .values_list("oauth_username", flat=True)
+                        .first()
                     ) or message.from_email
 
                     # Check if we need to reinitialize for a different from_email
-                    if (not self.connection or
-                        self.from_email != oauth_username or
-                        not self.configuration_id):
+                    if (
+                        not self.connection
+                        or self.from_email != oauth_username
+                        or not self.configuration_id
+                    ):
 
                         logger.info(
                             f"Opening a new connection in send_messages: "
@@ -545,7 +569,9 @@ class GmailOAuth2Backend(EmailBackend):
                 except Exception as e:
                     if not self.fail_silently:
                         raise
-                    logger.error(f"Failed to send message from {message.from_email}: {str(e)}")
+                    logger.error(
+                        f"Failed to send message from {message.from_email}: {str(e)}"
+                    )
 
             if self.connection:
                 self.close()

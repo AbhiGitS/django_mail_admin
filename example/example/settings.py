@@ -26,8 +26,10 @@ DEBUG = True
 
 ALLOWED_HOSTS = ["*"]
 
+
 def config(key):
     return _config(key, default="")
+
 
 # Application definition
 
@@ -130,8 +132,8 @@ INSTALLED_APPS += ("django_admin_row_actions",)
 DJANGO_MAIL_ADMIN = {
     "BACKENDS": {
         "default": "django_mail_admin.backends.GmailOAuth2Backend",
-        "smtpoutbox":"django_mail_admin.backends.SMTPOutboxBackend",
-        "smtp": "django.core.mail.backends.smtp.EmailBackend",
+        "smtp": "django_mail_admin.backends.SMTPOutboxBackend",
+        # "smtp": "django.core.mail.backends.smtp.EmailBackend",
         "o365": "django_mail_admin.backends.O365Backend",
         "gmail": "django_mail_admin.backends.GmailOAuth2Backend",
     }

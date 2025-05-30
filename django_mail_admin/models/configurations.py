@@ -62,6 +62,51 @@ class Outbox(models.Model):
     # deprecated field we're no longer actively using. keeping for test/code compatability.
     active = models.BooleanField(_("Active"), default=False)
 
+    def test_connection(self):
+        """
+        Test the connection to this outbox using configured credentials.
+
+        Returns:
+            tuple: (success, message) where success is a boolean indicating if
+                   the connection was successful, and message contains details
+                   about the connection attempt.
+        """
+        from django_mail_admin.connections import connections
+
+        try:
+            # Create a backend alias based on the email host type
+            if "office365" in self.email_host.lower():
+                backend_alias = "o365;;;" + self.email_host_user
+            elif "gmail" in self.email_host.lower():
+                backend_alias = "gmail;;;" + self.email_host_user
+            else:
+                backend_alias = "smtp;;;" + self.email_host_user
+
+            # Get a connection using the ConnectionHandler
+            connection = connections[backend_alias]
+
+            # Test the connection - this will vary by backend type
+            if hasattr(connection, "connection") and connection.connection:
+                # For SMTP-based backends, we can use the noop() method
+                if hasattr(connection.connection, "noop"):
+                    connection.connection.noop()
+
+                # For O365Backend, check if authenticated
+                if hasattr(connection, "conn") and connection.conn:
+                    if (
+                        hasattr(connection.conn, "is_authenticated")
+                        and not connection.conn.is_authenticated
+                    ):
+                        return False, "Office365 connection not authenticated"
+
+            return True, f"Successfully connected to {self.email_host}"
+        except Exception as e:
+            return False, f"Connection failed: {str(e)}"
+        finally:
+            # Close the connection to clean up
+            if "connection" in locals() and connection:
+                connection.close()
+
     def save(self, *args, **kwargs):
         # Only one item can be active at a time
 
@@ -140,6 +185,41 @@ class Mailbox(models.Model):
         null=True,
         default=None,
     )
+
+    def test_connection(self):
+        """
+        Test the connection to this mailbox using configured credentials.
+
+        Returns:
+            tuple: (success, message) where success is a boolean indicating if
+                   the connection was successful, and message contains details
+                   about the connection attempt.
+        """
+        try:
+            connection = self.get_connection()
+            if not connection:
+                return False, "Could not establish connection - invalid configuration"
+
+            # Test the connection based on the transport type
+            if self.type == "imap" or self.type == "gmail":
+                # IMAP connections have a noop() method to test the connection
+                connection.server.noop()
+            elif self.type == "pop3":
+                # POP3 connections have a noop() method
+                connection.server.noop()
+            elif self.type == O365Transport.SCHEME:  # 'office365'
+                # For Office365, we can check if the connection is authenticated
+                if not connection.is_authenticated:
+                    return False, "Office365 connection not authenticated"
+            # For local file transports, just check if the connection exists
+            elif self.type in ["maildir", "mbox", "babyl", "mh", "mmdf"]:
+                # These are local file transports, so just check if the path exists
+                if not connection:
+                    return False, f"Could not access local transport at {self.location}"
+
+            return True, f"Successfully connected to {self.name}"
+        except Exception as e:
+            return False, f"Connection failed: {str(e)}"
 
     from_email = models.CharField(
         _("From email"),
@@ -350,7 +430,9 @@ class Mailbox(models.Model):
         ):
             filename = None
             raw_filename = msg.get_filename()
-            logger.info(f"Processing attachment for incoming email id {record.pk} with raw_filename {raw_filename}")
+            logger.info(
+                f"Processing attachment for incoming email id {record.pk} with raw_filename {raw_filename}"
+            )
             if raw_filename:
                 filename = utils.convert_header_to_unicode(raw_filename)
             if not filename:
@@ -361,17 +443,23 @@ class Mailbox(models.Model):
                 extension = ".bin"
 
             attachment = IncomingAttachment()
-            logger.info(f"Saving attachment document for incoming email id {record.pk} with filename {filename}")
+            logger.info(
+                f"Saving attachment document for incoming email id {record.pk} with filename {filename}"
+            )
             attachment.document.save(
                 uuid.uuid4().hex + extension,
                 ContentFile(BytesIO(msg.get_payload(decode=True)).getvalue()),
             )
-            logger.info(f"Attachment document saved for incoming email id {record.pk} with filename {filename}")
+            logger.info(
+                f"Attachment document saved for incoming email id {record.pk} with filename {filename}"
+            )
             attachment.message = record
             for key, value in msg.items():
                 attachment[key] = value
             attachment.save()
-            logger.info(f"Attachment created and saved for incoming email id {record.pk} with filename {filename}")
+            logger.info(
+                f"Attachment created and saved for incoming email id {record.pk} with filename {filename}"
+            )
 
             placeholder = EmailMessage()
             placeholder[get_attachment_interpolation_header()] = str(attachment.pk)
@@ -423,7 +511,11 @@ class Mailbox(models.Model):
         msg.mailbox = self
         msg.message_id = message_id
         if "subject" in message:
-            msg.subject = utils.convert_header_to_unicode(message["subject"]).replace("\n","").replace("\r","")[0:255]
+            msg.subject = (
+                utils.convert_header_to_unicode(message["subject"])
+                .replace("\n", "")
+                .replace("\r", "")[0:255]
+            )
         if "from" in message:
             msg.from_header = utils.convert_header_to_unicode(message["from"])
         if "to" in message:
@@ -480,7 +572,9 @@ class Mailbox(models.Model):
 
         else:
             msg.eml.save(
-                "%s.eml" % uuid.uuid4(), ContentFile(BytesIO(message.as_bytes()).getvalue()), save=False
+                "%s.eml" % uuid.uuid4(),
+                ContentFile(BytesIO(message.as_bytes()).getvalue()),
+                save=False,
             )
 
     def get_new_mail(self, condition=None):

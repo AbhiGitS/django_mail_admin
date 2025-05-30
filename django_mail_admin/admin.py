@@ -96,6 +96,39 @@ def switch_active(mailbox_admin, request, queryset):
 switch_active.short_description = _("Switch active status")
 
 
+def test_mailbox_connection(mailbox_admin, request, queryset):
+    for mailbox in queryset.all():
+        success, message = mailbox.test_connection()
+        if success:
+            messages.success(
+                request,
+                f"Connection successful for mailbox '{mailbox.name}': {message}",
+            )
+        else:
+            messages.error(
+                request, f"Connection failed for mailbox '{mailbox.name}': {message}"
+            )
+
+
+test_mailbox_connection.short_description = _("Test connection")
+
+
+def test_outbox_connection(outbox_admin, request, queryset):
+    for outbox in queryset.all():
+        success, message = outbox.test_connection()
+        if success:
+            messages.success(
+                request, f"Connection successful for outbox '{outbox.name}': {message}"
+            )
+        else:
+            messages.error(
+                request, f"Connection failed for outbox '{outbox.name}': {message}"
+            )
+
+
+test_outbox_connection.short_description = _("Test connection")
+
+
 def send_queued_mail(outbox_admin, request, queryset):
     outbox: Outbox | None = None
     for outbox in queryset.all():
@@ -124,7 +157,10 @@ def send_queued_mail(outbox_admin, request, queryset):
                     connection.close()
 
                     if (
-                        not OutgoingEmail.objects.filter(status=STATUS.queued, from_email__iexact=outbox.email_host_user)
+                        not OutgoingEmail.objects.filter(
+                            status=STATUS.queued,
+                            from_email__iexact=outbox.email_host_user,
+                        )
                         .filter(Q(scheduled_time__lte=now()) | Q(scheduled_time=None))
                         .exists()
                     ):
@@ -147,7 +183,7 @@ class MailboxAdmin(get_parent()):
     readonly_fields = [
         "last_polling",
     ]
-    actions = [get_new_mail, switch_active]
+    actions = [get_new_mail, switch_active, test_mailbox_connection]
 
 
 class IncomingAttachmentInline(admin.TabularInline):
@@ -489,10 +525,10 @@ class OutboxAdmin(admin.ModelAdmin):
         "email_host_user",
         "email_port",
         "id",
-        #"active",
+        # "active",
     )
-    #list_filter = ("active",)
-    actions = [send_queued_mail]
+    # list_filter = ("active",)
+    actions = [send_queued_mail, test_outbox_connection]
 
 
 class LogAdmin(admin.ModelAdmin):
