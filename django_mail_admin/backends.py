@@ -113,34 +113,37 @@ class SMTPOutboxBackend(EmailBackend):
                 self.configuration_id = None
             super().close()
 
+    def get_password(self, outbox: Outbox):
+        return outbox.email_host_password
+
     def open(self):
         with self._lock:
-            configuration = Outbox.objects.filter(
+            outbox = Outbox.objects.filter(
                 email_host_user__iexact=self.from_email  # ignore case
             ).first()
 
-            if not configuration:
+            if not outbox:
                 raise ValueError(
                     f"Unable to find an Outbox with email_host_user={self.from_email}"
                 )
 
             # existing saved connection is valid. no need for a new one
-            if self.configuration_id and self.configuration_id == configuration.id:
+            if self.configuration_id and self.configuration_id == outbox.id:
                 return
             elif self.configuration_id:
                 # close the existing invalid connection
-                self.from_email = configuration.email_host_user
-                self.configuration_id = configuration.id
+                self.from_email = outbox.email_host_user
+                self.configuration_id = outbox.id
 
-            self.host = configuration.email_host
-            self.port = configuration.email_port
-            self.username = configuration.email_host_user
-            self.password = configuration.email_host_password
-            self.use_tls = configuration.email_use_tls
-            self.use_ssl = configuration.email_use_ssl
-            self.timeout = configuration.email_timeout
-            self.ssl_keyfile = configuration.email_ssl_keyfile
-            self.ssl_certfile = configuration.email_ssl_certfile
+            self.host = outbox.email_host
+            self.port = outbox.email_port
+            self.username = outbox.email_host_user
+            self.password = self.get_password(outbox)
+            self.use_tls = outbox.email_use_tls
+            self.use_ssl = outbox.email_use_ssl
+            self.timeout = outbox.email_timeout
+            self.ssl_keyfile = outbox.email_ssl_keyfile
+            self.ssl_certfile = outbox.email_ssl_certfile
 
             return super().open()
 
