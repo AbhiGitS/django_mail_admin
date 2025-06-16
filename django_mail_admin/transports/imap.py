@@ -17,18 +17,19 @@ logger = logging.getLogger(__name__)
 
 class ImapTransport(EmailTransport):
     def __init__(
-        self, hostname, port=None, ssl=False, tls=False,
-        archive='', folder=None,
+        self,
+        hostname,
+        port=None,
+        ssl=False,
+        tls=False,
+        archive="",
+        folder=None,
     ):
         self.max_message_size = getattr(
-            settings,
-            'DJANGO_MAILBOX_MAX_MESSAGE_SIZE',
-            False
+            settings, "DJANGO_MAILBOX_MAX_MESSAGE_SIZE", False
         )
         self.integration_testing_subject = getattr(
-            settings,
-            'DJANGO_MAILBOX_INTEGRATION_TESTING_SUBJECT',
-            None
+            settings, "DJANGO_MAILBOX_INTEGRATION_TESTING_SUBJECT", None
         )
         self.hostname = hostname
         self.port = port
@@ -57,13 +58,13 @@ class ImapTransport(EmailTransport):
 
     def _get_all_message_ids(self):
         # Fetch all the message uids
-        response, message_ids = self.server.uid('search', None, 'ALL')
+        response, message_ids = self.server.uid("search", None, "ALL")
         message_id_string = message_ids[0].strip()
         # Usually `message_id_string` will be a list of space-separated
         # ids; we must make sure that it isn't an empty string before
         # splitting into individual UIDs.
         if message_id_string:
-            return message_id_string.decode().split(' ')
+            return message_id_string.decode().split(" ")
         return []
 
     def _get_small_message_ids(self, message_ids):
@@ -72,23 +73,17 @@ class ImapTransport(EmailTransport):
         # limit
         safe_message_ids = []
 
-        status, data = self.server.uid(
-            'fetch',
-            ','.join(message_ids),
-            '(RFC822.SIZE)'
-        )
+        status, data = self.server.uid("fetch", ",".join(message_ids), "(RFC822.SIZE)")
 
         for each_msg in data:
             each_msg = each_msg.decode()
             try:
-                uid = each_msg.split(' ')[2]
-                size = each_msg.split(' ')[4].rstrip(')')
+                uid = each_msg.split(" ")[2]
+                size = each_msg.split(" ")[4].rstrip(")")
                 if int(size) <= int(self.max_message_size):
                     safe_message_ids.append(uid)
             except ValueError as e:
-                logger.warning(
-                    "ValueError: %s working on %s" % (e, each_msg[0])
-                )
+                logger.warning("ValueError: %s working on %s" % (e, each_msg[0]))
                 pass
         return safe_message_ids
 
@@ -110,7 +105,7 @@ class ImapTransport(EmailTransport):
 
         for uid in message_ids:
             try:
-                typ, msg_contents = self.server.uid('fetch', uid, '(RFC822)')
+                typ, msg_contents = self.server.uid("fetch", uid, "(RFC822)")
                 if not msg_contents:
                     continue
                 try:
@@ -129,13 +124,13 @@ class ImapTransport(EmailTransport):
                 continue
 
             if self.archive:
-                self.server.uid('copy', uid, self.archive)
+                self.server.uid("copy", uid, self.archive)
 
-            #self.server.uid('store', uid, "+FLAGS", "(\\Deleted)") # do not delete
-        #self.server.expunge() # do not worry about deleted message handling.
+            self.server.uid("store", uid, "+FLAGS", "(\\Deleted)")
+        self.server.expunge()
         return
 
-    def store_message_in_folder(self, folder_name, msg, flags='') -> bool:
+    def store_message_in_folder(self, folder_name, msg, flags="") -> bool:
         if not all([folder_name, msg]):
             return False
         try:
@@ -144,19 +139,21 @@ class ImapTransport(EmailTransport):
                 logger.info(f"Folder created: {folder_name}")
             else:
                 pass
-                #logger.info(f"Failed to create folder: {folder_name}. Server said: {response}")
+                # logger.info(f"Failed to create folder: {folder_name}. Server said: {response}")
             typ, data = self.server.append(
-                folder_name, 
+                folder_name,
                 flags,
-                imaplib.Time2Internaldate(time.time()), 
-                msg.as_bytes()
+                imaplib.Time2Internaldate(time.time()),
+                msg.as_bytes(),
             )
             return True
         except Exception as e:
-            logger.error(f"Error storing msg to imap folder_name: {folder_name}: error: {e}")
+            logger.error(
+                f"Error storing msg to imap folder_name: {folder_name}: error: {e}"
+            )
             return False
 
-    def _detect_imap_folder_path_separator(self, decoded_folder_name:str) -> str:
+    def _detect_imap_folder_path_separator(self, decoded_folder_name: str) -> str:
         parts = decoded_folder_name.split(" ")
         if len(parts) < 3:
             sep_char = "/"
@@ -168,11 +165,15 @@ class ImapTransport(EmailTransport):
         path_separators = "/"
         status, folders = self.server.list()
         sent_candidates = []
-        separator = self._detect_imap_folder_path_separator(folders[0].decode()) if folders else None
+        separator = (
+            self._detect_imap_folder_path_separator(folders[0].decode())
+            if folders
+            else None
+        )
 
         for folder_raw in folders:
             decoded = folder_raw.decode()
-            
+
             # Example line1: '(\HasNoChildren \Sent) "/" "Sent Items"'
             if "\\Sent" in decoded:
                 # Extract folder name (quoted at the end)
@@ -183,8 +184,12 @@ class ImapTransport(EmailTransport):
         if not sent_candidates:
             # Example line2: '(\HasNoChildren \\Exists) "." "INBBOX.Sent"'
             common_names = [
-                "Sent", "Sent Mail", "Sent Messages",
-                "[Gmail]/Sent Mail", "INBOX.Sent", "Sent Items"
+                "Sent",
+                "Sent Mail",
+                "Sent Messages",
+                "[Gmail]/Sent Mail",
+                "INBOX.Sent",
+                "Sent Items",
             ]
             found_name = False
             for folder_raw in folders:
@@ -195,7 +200,7 @@ class ImapTransport(EmailTransport):
                     if name in folder_line:
                         folder_name = folder_line.split(separator)[-1].strip('"')
                         # If not already quoted and contains spaces, quote it
-                        if not folder_name.startswith('"') and ' ' in folder_name:
+                        if not folder_name.startswith('"') and " " in folder_name:
                             folder_name = f'"{folder_name}"'
                         sent_candidates.append(folder_name)
                         found_name = True
