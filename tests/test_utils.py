@@ -78,8 +78,70 @@ class UtilsTest(TestCase):
         self.assertIsInstance(attachments[0], Attachment)
         self.assertTrue(attachments[0].pk)
         self.assertEqual(attachments[0].file.read(), b'content')
-        self.assertTrue(attachments[0].name.startswith('attachment_file'))
-        self.assertEquals(attachments[0].mimetype, '')
+        self.assertEqual(attachments[0].name, 'attachment_file1.txt')  # Display name should be set
+        self.assertEqual(attachments[0].mimetype, '')
+
+    def test_create_attachments_with_email(self):
+        """Test that attachments are stored with email-specific paths"""
+        email = OutgoingEmail.objects.create(
+            from_email='test@example.com',
+            to=['recipient@example.com'],
+            subject='Test',
+            message='Test message',
+            status=STATUS.queued
+        )
+        
+        attachments = create_attachments({
+            'test_document.pdf': ContentFile('pdf content'),
+            'data.csv': ContentFile('csv content'),
+        }, email=email)
+
+        self.assertEqual(len(attachments), 2)
+        
+        # Check that files are stored in email-specific directory
+        for att in attachments:
+            self.assertTrue(att.file.name.startswith(f'mail_admin_attachments/'))
+            self.assertIn(f'/{email.id}/', att.file.name)
+            
+        # Check display names are properly set
+        attachment_names = [att.name for att in attachments]
+        self.assertIn('test_document.pdf', attachment_names)
+        self.assertIn('data.csv', attachment_names)
+
+    def test_create_attachments_unique_paths(self):
+        """Test that same filename in different emails get different storage paths"""
+        email1 = OutgoingEmail.objects.create(
+            from_email='test@example.com',
+            to=['recipient1@example.com'],
+            subject='Test 1',
+            message='Test message',
+            status=STATUS.queued
+        )
+        
+        email2 = OutgoingEmail.objects.create(
+            from_email='test@example.com',
+            to=['recipient2@example.com'],
+            subject='Test 2',
+            message='Test message',
+            status=STATUS.queued
+        )
+        
+        attachments1 = create_attachments({
+            'document.pdf': ContentFile('content for email 1'),
+        }, email=email1)
+        
+        attachments2 = create_attachments({
+            'document.pdf': ContentFile('content for email 2'),
+        }, email=email2)
+        
+        # Both should have same display name
+        self.assertEqual(attachments1[0].name, 'document.pdf')
+        self.assertEqual(attachments2[0].name, 'document.pdf')
+        
+        # But different storage paths
+        self.assertNotEqual(attachments1[0].file.name, attachments2[0].file.name)
+        self.assertIn(f'/{email1.id}/', attachments1[0].file.name)
+        self.assertIn(f'/{email2.id}/', attachments2[0].file.name)
 
     def test_create_attachments_with_mimetype(self):
         attachments = create_attachments({
@@ -96,9 +158,9 @@ class UtilsTest(TestCase):
         self.assertEqual(len(attachments), 2)
         self.assertIsInstance(attachments[0], Attachment)
         self.assertTrue(attachments[0].pk)
-        self.assertEquals(attachments[0].file.read(), b'content')
-        self.assertTrue(attachments[0].name.startswith('attachment_file'))
-        self.assertEquals(attachments[0].mimetype, 'text/plain')
+        self.assertEqual(attachments[0].file.read(), b'content')
+        self.assertEqual(attachments[0].name, 'attachment_file1.txt')
+        self.assertEqual(attachments[0].mimetype, 'text/plain')
 
     def test_create_attachments_open_file(self):
         attachments = create_attachments({
@@ -109,8 +171,8 @@ class UtilsTest(TestCase):
         self.assertIsInstance(attachments[0], Attachment)
         self.assertTrue(attachments[0].pk)
         self.assertTrue(attachments[0].file.read())
-        self.assertEquals(attachments[0].name, 'attachment_file.py')
-        self.assertEquals(attachments[0].mimetype, u'')
+        self.assertEqual(attachments[0].name, 'attachment_file.py')
+        self.assertEqual(attachments[0].mimetype, u'')
 
     def test_parse_priority(self):
         self.assertEqual(parse_priority('now'), PRIORITY.now)

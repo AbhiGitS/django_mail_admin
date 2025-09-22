@@ -88,27 +88,34 @@ def sanitize_filename(filename):
 
 def get_attachment_save_path(instance, filename):
     """
-    Save attachment as {original document id}/displayname.x
+    Save attachment as {original document id}/displayname.x where original document id 
+    refers to the OutgoingEmail's ID
     """
-    # Determine display name
-    display_name = getattr(instance, "name", None) or filename
-    display_name = sanitize_filename(display_name)
-
-    # Try to get OutgoingEmail id (assumes ManyToMany, but usually only one per attachment)
-    email_id = "unknown"
-    if hasattr(instance, "emails") and instance.emails.exists():
-        # Use the first email ID
-        email_id = str(instance.emails.first().id)
-    # Fallback: if instance has an id, use that (for standalone orphan attachments)
-    elif hasattr(instance, "id") and instance.id:
-        email_id = str(instance.id)
-
+    # Set display name on the instance if not already set
+    if hasattr(instance, 'name'):
+        if not instance.name:
+            instance.name = filename  # set original filename
+    
+    # Sanitize the filename for safe storage
+    display_name = sanitize_filename(filename)
+    
+    # Try to get the email ID from the instance's temporary attribute set during creation
+    email_id = getattr(instance, '_email_id', None)
+    
+    # If no email ID is available, fall back to timestamp-based organization
+    if not email_id:
+        path = get_attachment_upload_to()
+        if '%' in path:
+            path = datetime.datetime.utcnow().strftime(path)
+        return os.path.join(path, display_name)
+    
+    # Use email-specific directory structure
     path = get_attachment_upload_to()
     if '%' in path:
         path = datetime.datetime.utcnow().strftime(path)
 
     # Save as {upload_root}/{email_id}/{display_name}
-    return os.path.join(path, email_id, display_name)
+    return os.path.join(path, str(email_id), display_name)
 
 def parse_priority(priority):
     if priority is None:

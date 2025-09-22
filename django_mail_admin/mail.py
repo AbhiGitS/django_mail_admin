@@ -119,7 +119,7 @@ def send(sender, recipients=None, template=None, subject='',
             variables.append(TemplateVariable(name=k, value=str(v), email=email))
         TemplateVariable.objects.bulk_create(variables, 20)
     if attachments:
-        attachments = create_attachments(attachments)
+        attachments = create_attachments(attachments, email=email)
         email.attachments.add(*attachments)
 
     if priority == PRIORITY.now:
