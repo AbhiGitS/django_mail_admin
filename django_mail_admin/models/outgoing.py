@@ -283,13 +283,15 @@ class Attachment(models.Model):
         return self.name
 
 
-def create_attachments(attachment_files):
+def create_attachments(attachment_files, email=None):
     """
     Create Attachment instances from files
 
     attachment_files is a dict of:
         * Key - the filename to be used for the attachment.
         * Value - file-like object, or a filename to open OR a dict of {'file': file-like-object, 'mimetype': string}
+    
+    email: OutgoingEmail instance to associate attachments with for unique storage path
 
     Returns a list of Attachment objects
     """
@@ -311,8 +313,15 @@ def create_attachments(attachment_files):
             content = File(opened_file)
 
         attachment = Attachment()
+        # Set the display name to the intended filename
+        attachment.name = filename
         if mimetype:
             attachment.mimetype = mimetype
+        
+        # Set temporary email ID for path generation if email is provided
+        if email and hasattr(email, 'id') and email.id:
+            attachment._email_id = email.id
+            
         attachment.file.save(filename, content=content, save=True)
 
         attachments.append(attachment)

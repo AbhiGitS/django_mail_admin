@@ -3,6 +3,7 @@ import email.header
 import logging
 import os
 from collections import namedtuple
+import re
 
 from django.core.exceptions import ValidationError
 
@@ -13,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 PRIORITY = namedtuple('PRIORITY', 'low medium high now')._make(range(4))
 STATUS = namedtuple('STATUS', 'sent failed queued')._make(range(3))
-
 
 def convert_header_to_unicode(header):
     default_charset = get_default_charset()
@@ -40,7 +40,6 @@ def convert_header_to_unicode(header):
             default_charset,
         )
         return header.decode(default_charset, 'replace')
-
 
 def get_body_from_message(message, maintype, subtype):
     """
@@ -80,20 +79,43 @@ def get_body_from_message(message, maintype, subtype):
 
     return body
 
+def sanitize_filename(filename):
+    # Remove any dangerous path elements and illegal characters
+    filename = os.path.basename(filename)
+    # Remove anything except safe chars, dash, underscore, dot
+    filename = re.sub(r'[^a-zA-Z0-9._-]', '_', filename)
+    return filename
 
 def get_attachment_save_path(instance, filename):
+    """
+    Save attachment as {original document id}/displayname.x where original document id 
+    refers to the OutgoingEmail's ID
+    """
+    # Set display name on the instance if not already set
     if hasattr(instance, 'name'):
         if not instance.name:
             instance.name = filename  # set original filename
+    
+    # Sanitize the filename for safe storage
+    display_name = sanitize_filename(filename)
+    
+    # Try to get the email ID from the instance's temporary attribute set during creation
+    email_id = getattr(instance, '_email_id', None)
+    
+    # If no email ID is available, fall back to timestamp-based organization
+    if not email_id:
+        path = get_attachment_upload_to()
+        if '%' in path:
+            path = datetime.datetime.utcnow().strftime(path)
+        return os.path.join(path, display_name)
+    
+    # Use email-specific directory structure
     path = get_attachment_upload_to()
     if '%' in path:
         path = datetime.datetime.utcnow().strftime(path)
 
-    return os.path.join(
-        path,
-        filename,
-    )
-
+    # Save as {upload_root}/{email_id}/{display_name}
+    return os.path.join(path, str(email_id), display_name)
 
 def parse_priority(priority):
     if priority is None:
@@ -106,7 +128,6 @@ def parse_priority(priority):
             raise ValueError('Invalid priority, must be one of: %s' %
                              ', '.join(PRIORITY._fields))
     return priority
-
 
 def parse_emails(emails):
     """
@@ -128,7 +149,6 @@ def parse_emails(emails):
             raise ValidationError('%s is not a valid email address' % i)
 
     return emails
-
 
 def split_emails(emails, split_count=1):
     # Group emails into X sublists
