@@ -3,6 +3,7 @@ import email.header
 import logging
 import os
 from collections import namedtuple
+import re
 
 from django.core.exceptions import ValidationError
 
@@ -13,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 PRIORITY = namedtuple('PRIORITY', 'low medium high now')._make(range(4))
 STATUS = namedtuple('STATUS', 'sent failed queued')._make(range(3))
-
 
 def convert_header_to_unicode(header):
     default_charset = get_default_charset()
@@ -40,7 +40,6 @@ def convert_header_to_unicode(header):
             default_charset,
         )
         return header.decode(default_charset, 'replace')
-
 
 def get_body_from_message(message, maintype, subtype):
     """
@@ -80,20 +79,36 @@ def get_body_from_message(message, maintype, subtype):
 
     return body
 
+def sanitize_filename(filename):
+    # Remove any dangerous path elements and illegal characters
+    filename = os.path.basename(filename)
+    # Remove anything except safe chars, dash, underscore, dot
+    filename = re.sub(r'[^a-zA-Z0-9._-]', '_', filename)
+    return filename
 
 def get_attachment_save_path(instance, filename):
-    if hasattr(instance, 'name'):
-        if not instance.name:
-            instance.name = filename  # set original filename
+    """
+    Save attachment as {original document id}/displayname.x
+    """
+    # Determine display name
+    display_name = getattr(instance, "name", None) or filename
+    display_name = sanitize_filename(display_name)
+
+    # Try to get OutgoingEmail id (assumes ManyToMany, but usually only one per attachment)
+    email_id = "unknown"
+    if hasattr(instance, "emails") and instance.emails.exists():
+        # Use the first email ID
+        email_id = str(instance.emails.first().id)
+    # Fallback: if instance has an id, use that (for standalone orphan attachments)
+    elif hasattr(instance, "id") and instance.id:
+        email_id = str(instance.id)
+
     path = get_attachment_upload_to()
     if '%' in path:
         path = datetime.datetime.utcnow().strftime(path)
 
-    return os.path.join(
-        path,
-        filename,
-    )
-
+    # Save as {upload_root}/{email_id}/{display_name}
+    return os.path.join(path, email_id, display_name)
 
 def parse_priority(priority):
     if priority is None:
@@ -106,7 +121,6 @@ def parse_priority(priority):
             raise ValueError('Invalid priority, must be one of: %s' %
                              ', '.join(PRIORITY._fields))
     return priority
-
 
 def parse_emails(emails):
     """
@@ -128,7 +142,6 @@ def parse_emails(emails):
             raise ValidationError('%s is not a valid email address' % i)
 
     return emails
-
 
 def split_emails(emails, split_count=1):
     # Group emails into X sublists
