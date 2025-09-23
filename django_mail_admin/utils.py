@@ -3,6 +3,7 @@ import email.header
 import logging
 import os
 from collections import namedtuple
+import uuid
 
 from django.core.exceptions import ValidationError
 
@@ -82,17 +83,21 @@ def get_body_from_message(message, maintype, subtype):
 
 
 def get_attachment_save_path(instance, filename):
+    # Keep original filename as display name (what users see)
     if hasattr(instance, 'name'):
         if not instance.name:
-            instance.name = filename  # set original filename
+            instance.name = filename  # Clean display name: "data.json"
+    
     path = get_attachment_upload_to()
     if '%' in path:
         path = datetime.datetime.utcnow().strftime(path)
+    
+    # Add UUID to file system path (prevents race conditions)
+    unique_id = str(uuid.uuid4())[:8]
+    unique_filename = f"{unique_id}_{filename}"
+    
+    return os.path.join(path, unique_filename)
 
-    return os.path.join(
-        path,
-        filename,
-    )
 
 
 def parse_priority(priority):
