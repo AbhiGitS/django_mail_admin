@@ -3,6 +3,7 @@ import email.header
 import logging
 import os
 from collections import namedtuple
+import uuid
 
 from django.core.exceptions import ValidationError
 
