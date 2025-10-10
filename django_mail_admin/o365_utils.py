@@ -294,7 +294,8 @@ class O365Connection:
             # ISO 8601 format AND in UTC time.
             # For example, midnight UTC on Jan 1, 2022 is 2022-01-01T00:00:00Z.
             qstr = f"receivedDateTime gt {last_polled.replace(microsecond=0).isoformat()[:-6]}Z"
-        for mail in mail_folder.get_messages(order_by=order_by, query=qstr):
+        # limit=None will force batch retrieval of all emails that satisfies the query.
+        for mail in mail_folder.get_messages(order_by=order_by, query=qstr, limit=None):
             yield (mail.get_mime_content())
 
 
