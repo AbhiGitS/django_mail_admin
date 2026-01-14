@@ -7,3 +7,4 @@ from django_mail_admin.transports.mh import MHTransport
 from django_mail_admin.transports.mmdf import MMDFTransport
 from django_mail_admin.transports.gmail import GmailImapTransport
 from django_mail_admin.transports.o365 import O365Transport
+from django_mail_admin.transports.nylas import NylasTransport
