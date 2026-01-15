@@ -149,6 +149,8 @@ AUTHENTICATION_BACKENDS = (
     "social_core.backends.google.GoogleOAuth2",
     "django.contrib.auth.backends.ModelBackend",
 )
+NYLAS_CLIENT_ID = config("NYLAS_CLIENT_ID")  # Nylas Account Client-ID
+NYLAS_CLIENT_SECRET = NYLAS_API_KEY  # Same as API KEY
 
 SOCIAL_AUTH_GOOGLE_OAUTH2 = "abc"
 SOCIAL_AUTH_GOOGLE_OAUTH2_LOGIN_REDIRECT_URL = "/example/mailbox"

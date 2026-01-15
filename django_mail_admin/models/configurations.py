@@ -593,6 +593,64 @@ class Mailbox(models.Model):
                 save=False,
             )
 
+    def get_nylas_grant_id(self):
+        """
+        Get grant_id from NylasGrant model or URI fallback.
+
+        Priority:
+        1. Check NylasGrant model (primary source)
+        2. Fall back to parsing URI if model doesn't exist
+
+        Returns:
+            str or None: The grant_id if found, None otherwise
+        """
+        # Try model first
+        try:
+            from django_mail_admin.models.nylas_grant import NylasGrant
+
+            nylas_grant = NylasGrant.objects.get(mailbox=self)
+            return nylas_grant.grant_id
+        except:
+            # Fallback to URI
+            if self.type == "nylas" and self.uri:
+                grant_id = self._query_string.get("grant_id", [""])[0]
+                return grant_id if grant_id else None
+        return None
+
+    def update_nylas_grant_id(
+        self, grant_id: str, email: str, provider: str, metadata: dict = None
+    ):
+        """
+        Update grant_id in BOTH NylasGrant model and Mailbox URI.
+
+        This ensures dual storage: model for metadata/status tracking,
+        URI for backward compatibility.
+
+        Args:
+            grant_id: The Nylas grant identifier
+            email: Email address associated with the grant
+            provider: Email provider (google, microsoft, etc.)
+            metadata: Additional grant metadata from Nylas
+        """
+        from django_mail_admin.models.nylas_grant import NylasGrant
+
+        # Update/Create NylasGrant model
+        NylasGrant.objects.update_or_create(
+            mailbox=self,
+            defaults={
+                "grant_id": grant_id,
+                "email": email,
+                "provider": provider,
+                "grant_status": "valid",
+                "metadata": metadata or {},
+            },
+        )
+
+        # Update URI for backward compatibility
+        self.uri = f"nylas:{email}:/?grant_id={grant_id}"
+        self.from_email = email
+        self.save(update_fields=["uri", "from_email"])
+
     def get_new_mail(self, condition=None):
         """Connect to this transport and fetch new messages."""
         new_mail = []

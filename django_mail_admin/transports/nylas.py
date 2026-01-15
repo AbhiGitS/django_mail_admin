@@ -32,11 +32,13 @@ class NylasTransport(EmailTransport):
             logger.warning("Couldn't authenticate with Nylas: %s" % e)
 
     def get_message(self, condition):
-        """Yield messages from Nylas API"""
+        """Yield messages from Nylas API with grant validation"""
         if not self.conn:
             logger.error("get_message unavailable; account not connected yet")
             return
 
+        # Note: Grant validation happens automatically in NylasConnection.get_messages()
+        # Exceptions (NylasGrantExpired, NylasGrantInvalid) will bubble up to caller
         for mail in self.conn.get_messages(
             last_polled=self.last_polled, condition=condition
         ):

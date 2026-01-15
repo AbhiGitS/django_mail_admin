@@ -29,6 +29,7 @@ from django_mail_admin.models import (
     STATUS,
     Log,
     Attachment,
+    NylasGrant,
 )
 from django_mail_admin.signals import message_received
 from django_mail_admin.utils import convert_header_to_unicode
@@ -172,6 +173,42 @@ def send_queued_mail(outbox_admin, request, queryset):
 send_queued_mail.short_description = _("Send queued email")
 
 
+class NylasGrantInline(admin.TabularInline):
+    """Display Nylas grant information for a mailbox"""
+
+    model = NylasGrant
+    extra = 0
+    readonly_fields = (
+        "grant_id",
+        "email",
+        "provider",
+        "grant_status",
+        "created_at",
+        "updated_at",
+    )
+    can_delete = False
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+def connect_nylas_account(mailbox_admin, request, queryset):
+    """Generate Nylas OAuth URL for selected mailboxes"""
+    mailbox = queryset.first()
+    auth_url = request.build_absolute_uri(
+        reverse("django_mail_admin:nylas_auth_start", args=[mailbox.id])
+    )
+    messages.info(
+        request,
+        mark_safe(
+            f'<a href="{auth_url}" target="_blank">Connect Nylas for "{mailbox.name}"</a>'
+        ),
+    )
+
+
+connect_nylas_account.short_description = _("Connect Nylas account")
+
+
 class MailboxAdmin(get_parent()):
     list_display = (
         "name",
@@ -183,6 +220,7 @@ class MailboxAdmin(get_parent()):
     readonly_fields = [
         "last_polling",
     ]
+    inlines = [NylasGrantInline]
     actions = [get_new_mail, switch_active, test_mailbox_connection]
 
 

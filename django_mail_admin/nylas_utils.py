@@ -8,12 +8,14 @@ from base64 import b64encode, urlsafe_b64decode
 
 from django.conf import settings
 from django.core.mail.message import EmailMessage, EmailMultiAlternatives
+from django_mail_admin.exceptions import (
+    NylasNotAuthenticated,
+    NylasGrantExpired,
+    NylasGrantInvalid,
+    NylasException,
+)
 
 logger = logging.getLogger(__name__)
-
-
-class NylasNotAuthenticated(Exception):
-    pass
 
 
 class NylasConnection:
@@ -63,6 +65,55 @@ class NylasConnection:
     def is_authenticated(self) -> bool:
         """Check if connection is authenticated"""
         return self.client is not None and self.grant_id is not None
+
+    def validate_grant(self, mailbox=None):
+        """
+        Validate the grant status and raise appropriate exceptions if invalid.
+
+        This method checks the grant status with Nylas API and updates the
+        NylasGrant model if a mailbox reference is provided.
+
+        Args:
+            mailbox: Optional Mailbox model instance for status updates
+
+        Raises:
+            NylasGrantExpired: If grant has expired and needs re-authentication
+            NylasGrantInvalid: If grant is invalid for other reasons
+            NylasException: If there's an error checking grant status
+        """
+        try:
+            grant_info = self.client.grants.find(self.grant_id)
+            grant_data = grant_info.data if hasattr(grant_info, "data") else grant_info
+
+            # Check grant status
+            grant_status = getattr(grant_data, "grant_status", "unknown")
+
+            if grant_status != "valid":
+                # Update model status if we have mailbox reference
+                if mailbox:
+                    try:
+                        from django_mail_admin.models.nylas_grant import NylasGrant
+
+                        ng = NylasGrant.objects.get(mailbox=mailbox)
+                        ng.mark_invalid(grant_status)
+                    except:
+                        pass
+
+                # Raise appropriate exception
+                if grant_status == "expired":
+                    raise NylasGrantExpired(
+                        grant_id=self.grant_id, email=self.from_email
+                    )
+                else:
+                    raise NylasGrantInvalid(grant_id=self.grant_id, reason=grant_status)
+
+        except (NylasGrantExpired, NylasGrantInvalid):
+            # Re-raise these exceptions as-is
+            raise
+        except Exception as e:
+            # Network or API error
+            logger.error(f"Error validating grant: {e}")
+            raise NylasException(f"Error validating grant {self.grant_id}: {e}")
 
     def get_messages(self, last_polled: datetime = None, condition=None):
         """Fetch messages from Nylas API with pagination and yield as MIME bytes"""

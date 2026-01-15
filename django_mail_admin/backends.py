@@ -670,6 +670,8 @@ class NylasBackend(BaseEmailBackend):
                         self.open()
 
                     # Send via Nylas
+                    # Note: Grant validation happens in NylasConnection.send_message()
+                    # Exceptions (NylasGrantExpired, NylasGrantInvalid) will bubble up
                     if self.conn.send_message(msg):
                         sent_count += 1
 

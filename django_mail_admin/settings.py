@@ -153,3 +153,13 @@ def get_nylas_api_key():
 def get_nylas_api_uri():
     """Get Nylas API URI (US vs EU)"""
     return getattr(settings, "NYLAS_API_URI", "https://api.us.nylas.com")
+
+
+def get_nylas_client_id():
+    """Get Nylas OAuth Client ID"""
+    return getattr(settings, "NYLAS_CLIENT_ID", None)
+
+
+def get_nylas_client_secret():
+    """Get Nylas OAuth Client Secret"""
+    return getattr(settings, "NYLAS_CLIENT_SECRET", None)

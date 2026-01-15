@@ -17,7 +17,10 @@
     <th class="hz">URI</th>
     <th class="hz">Active</th>
     <th class="hz">Last_polling</th>
-    <th class="hz">Action</th>
+    <th class="hz">Action Auth O365</th>
+    <th class="hz">Action OAuth/Google</th>
+    <th class="hz">Action OAuth/Nylas</th>
+    <th class="hz">Nylas Grant Status</th>
     </tr>
     {% for mbx in mailbox_list %}
     <tr>
@@ -27,8 +30,17 @@
         <td width="15%"">{{ mbx.uri }}</td>
         <td>{{ mbx.active }}</td>
         <td>{{ mbx.last_polling }}</td>
-        <td><a href="{% url 'mailbox_auth_step1' mbx.id %}"> Authorize w/mbx</a></td>
-        <td><a href="{% url "social:begin" "google-oauth2" %}">Authorize w/Google</a>
+        <td><a href="{% url 'mailbox_auth_step1' mbx.id %}">Authorize O365</a></td>
+        <td><a href="{% url "social:begin" "google-oauth2" %}">Authorize Google</a></td>
+        <td><a href="{% url 'mailbox_nylas_auth_step1' mbx.id %}">Connect Nylas</a></td>
+        <td>
+            {% if mbx.nylas_grant %}
+                <span style="color: {% if mbx.nylas_grant.grant_status == 'valid' %}green{% else %}red{% endif %}">
+                    {{ mbx.nylas_grant.email }} ({{ mbx.nylas_grant.provider }}) - {{ mbx.nylas_grant.grant_status }}
+                </span>
+            {% else %}
+                <span style="color: gray">Not connected</span>
+            {% endif %}
         </td>
     </tr>
     {% endfor %}

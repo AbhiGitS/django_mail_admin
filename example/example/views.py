@@ -67,3 +67,144 @@ def mailbox_auth_step2(request):
     # if result is True, then authentication was succesful
     #  and the auth token is stored in the token backend
     return render(request, "mailbox/auth.html", {"result": result})
+
+
+# Nylas OAuth views
+def mailbox_nylas_auth_step1(request, id):
+    """
+    Nylas OAuth Step 1: Redirect to Nylas hosted authentication
+    """
+    from urllib.parse import urlencode
+    from django.conf import settings
+
+    mbx = get_object_or_404(Mailbox, pk=id)
+
+    # Build callback URL
+    callback = request.build_absolute_uri(reverse("mailbox_nylas_auth_step2"))
+
+    # Get Nylas configuration
+    client_id = getattr(settings, "NYLAS_CLIENT_ID", None)
+    api_uri = getattr(settings, "NYLAS_API_URI", "https://api.us.nylas.com")
+
+    if not client_id:
+        return render(
+            request,
+            "mailbox/auth.html",
+            {"result": False, "message": "NYLAS_CLIENT_ID not configured in settings"},
+        )
+
+    # Build OAuth URL
+    params = {
+        "client_id": client_id,
+        "redirect_uri": callback,
+        "response_type": "code",
+        "state": str(id),
+        "access_type": "online",
+    }
+
+    auth_url = f"{api_uri}/v3/connect/auth?" + urlencode(params)
+    return redirect(auth_url)
+
+
+def mailbox_nylas_auth_step2(request):
+    """
+    Nylas OAuth Step 2: Handle callback and exchange code for grant
+    """
+    from django.conf import settings
+
+    code = request.GET.get("code")
+    state = request.GET.get("state")
+    error = request.GET.get("error")
+
+    if error:
+        return render(
+            request,
+            "mailbox/auth.html",
+            {"result": False, "message": f"Nylas OAuth error: {error}"},
+        )
+
+    if not code or not state:
+        return render(
+            request,
+            "mailbox/auth.html",
+            {"result": False, "message": "Missing code or state parameter"},
+        )
+
+    mbx = get_object_or_404(Mailbox, pk=state)
+
+    try:
+        from nylas import Client
+
+        api_key = getattr(settings, "NYLAS_API_KEY", None)
+        api_uri = getattr(settings, "NYLAS_API_URI", "https://api.us.nylas.com")
+        client_id = getattr(settings, "NYLAS_CLIENT_ID", None)
+        client_secret = getattr(settings, "NYLAS_CLIENT_SECRET", None)
+
+        if not all([api_key, client_id, client_secret]):
+            return render(
+                request,
+                "mailbox/auth.html",
+                {
+                    "result": False,
+                    "message": "Nylas configuration incomplete in settings",
+                },
+            )
+
+        client = Client(api_key=api_key, api_uri=api_uri)
+
+        # Exchange code for grant
+        callback = request.build_absolute_uri(reverse("mailbox_nylas_auth_step2"))
+        exchange_request = {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "code": code,
+            "redirect_uri": callback,
+        }
+
+        grant_response = client.auth.exchange_code_for_token(exchange_request)
+        grant_data = (
+            grant_response.data if hasattr(grant_response, "data") else grant_response
+        )
+
+        grant_id = getattr(grant_data, "grant_id", None) or grant_data.get("grant_id")
+        email = getattr(grant_data, "email", None) or grant_data.get("email")
+        provider = getattr(grant_data, "provider", None) or grant_data.get("provider")
+
+        if not grant_id:
+            return render(
+                request,
+                "mailbox/auth.html",
+                {"result": False, "message": "Failed to obtain grant_id from Nylas"},
+            )
+
+        # Update mailbox with grant using helper method
+        metadata = {}
+        if hasattr(grant_data, "__dict__"):
+            metadata = {
+                k: v
+                for k, v in grant_data.__dict__.items()
+                if k not in ["grant_id", "email", "provider", "grant_status"]
+            }
+
+        mbx.update_nylas_grant_id(
+            grant_id=grant_id,
+            email=email or mbx.from_email or "unknown@email.com",
+            provider=provider or "unknown",
+            metadata=metadata,
+        )
+
+        return render(
+            request,
+            "mailbox/auth.html",
+            {
+                "result": True,
+                "message": f"Successfully connected Nylas account: {email} ({provider})",
+            },
+        )
+
+    except Exception as e:
+        return render(
+            request,
+            "mailbox/auth.html",
+            {"result": False, "message": f"Nylas authentication failed: {str(e)}"},
+        )

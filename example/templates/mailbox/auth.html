@@ -11,7 +11,7 @@
 {% if result %}
 Authorization  {% if result == True %} completed <b>successfully</b> {% else %} attempt <b>failed </b> '{{ message }}'' {% endif %} for Mailbox {{  mbx.id }}, with URI {{ mbx.uri }}
 {% else %}
-    <p>Authorization results not yet available for Mailbox {{ mbx.id }}.</p>
+    <p>Authorization results not yet available for Mailbox {{ mbx.id }}. Message '{{message}}'</p>
 {% endif %}
 <!--
     <p><a target="_blank" href="{ url 'django_mail_admin.admin' }">Create new mailbox here...</a></p>
