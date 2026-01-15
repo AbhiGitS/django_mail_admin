@@ -603,41 +603,41 @@ class NylasBackend(BaseEmailBackend):
                 self.configuration_id = None
 
     def open(self):
-        """Open Nylas connection using Outbox configuration"""
+        """Open Nylas connection"""
         with self._lock:
-            configuration = Outbox.objects.filter(
-                email_host__icontains="nylas",
-                email_host_user__iexact=self.from_email,
-            ).first()
+            from django_mail_admin.nylas_utils import get_nylas_grant_backend
 
-            if not configuration:
+            # Find mailbox by from_email to get configuration_id
+            mailbox = Mailbox.objects.filter(from_email__iexact=self.from_email).first()
+
+            if not mailbox:
                 raise ValueError(
-                    f"Unable to find Outbox with email_host__icontains=nylas "
-                    f"and email_host_user={self.from_email}"
+                    f"Unable to find Mailbox with from_email={self.from_email}"
                 )
 
             # Existing connection is valid
-            if self.conn and self.configuration_id == configuration.id:
+            if self.conn and self.configuration_id == mailbox.id:
                 return
 
-            # Parse grant_id from email_host
-            parseresult = parse.urlparse(configuration.email_host)
-            if parseresult.scheme.lower() != NylasConnection.SCHEME:
-                raise ValueError(
-                    f'Invalid EMAIL_HOST scheme, expected "nylas", got "{parseresult.scheme}"'
-                )
-
-            query_dict = dict(parse.parse_qsl(parseresult.query))
-            grant_id = query_dict.get("grant_id", "")
-
-            if not grant_id:
-                raise ValueError("grant_id not found in EMAIL_HOST configuration")
-
             try:
-                self.conn = NylasConnection(
-                    from_email=self.from_email, grant_id=grant_id
-                )
-                self.configuration_id = configuration.id
+                # Try grant backend first (preferred, secure)
+                grant_backend = get_nylas_grant_backend(self.from_email)
+
+                if grant_backend and grant_backend.check_grant():
+                    # Use secure blob storage backend
+                    logger.info(f"Using grant backend for {self.from_email}")
+                    self.conn = NylasConnection(
+                        from_email=self.from_email, grant_backend=grant_backend
+                    )
+
+                if not self.conn:
+                    raise ValueError(
+                        f"Unable to establish connection by securing grant information for "
+                        f"email={self.from_email}"
+                    )
+
+                self.configuration_id = mailbox.id
+
             except Exception as e:
                 self.close()
                 raise

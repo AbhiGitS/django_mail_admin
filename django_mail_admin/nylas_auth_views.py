@@ -108,98 +108,32 @@ def nylas_auth_callback(request):
 
     mailbox = get_object_or_404(Mailbox, pk=state)
 
-    # Exchange code for grant
-    try:
-        from nylas import Client
+    # Exchange code for grant using shared utility function
+    from django_mail_admin.nylas_utils import exchange_nylas_code_for_grant
 
-        api_key = getattr(settings, "NYLAS_API_KEY", None)
-        api_uri = getattr(settings, "NYLAS_API_URI", "https://api.us.nylas.com")
-        client_id = getattr(settings, "NYLAS_CLIENT_ID", None)
-        client_secret = getattr(settings, "NYLAS_CLIENT_SECRET", None)
+    callback_url = request.build_absolute_uri(
+        reverse("django_mail_admin:nylas_auth_callback")
+    )
 
-        if not all([api_key, client_id, client_secret]):
-            return render(
-                request,
-                "django_mail_admin/nylas_auth.html",
-                {
-                    "result": False,
-                    "message": "Nylas configuration incomplete. Check NYLAS_API_KEY, NYLAS_CLIENT_ID, and NYLAS_CLIENT_SECRET in settings.",
-                },
-            )
+    success, message, grant_info = exchange_nylas_code_for_grant(
+        code=code, redirect_uri=callback_url, mailbox=mailbox
+    )
 
-        client = Client(api_key=api_key, api_uri=api_uri)
-
-        # Exchange authorization code for grant
-        callback_url = request.build_absolute_uri(
-            reverse("django_mail_admin:nylas_auth_callback")
-        )
-
-        exchange_request = {
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "code": code,
-            "redirect_uri": callback_url,
-        }
-
-        logger.info(f"Exchanging code for grant for mailbox {mailbox.id}")
-        grant_response = client.auth.exchange_code_for_token(exchange_request)
-
-        # Extract grant information
-        grant_data = (
-            grant_response.data if hasattr(grant_response, "data") else grant_response
-        )
-        grant_id = getattr(grant_data, "grant_id", None) or grant_data.get("grant_id")
-        email = getattr(grant_data, "email", None) or grant_data.get("email")
-        provider = getattr(grant_data, "provider", None) or grant_data.get("provider")
-
-        if not grant_id:
-            return render(
-                request,
-                "django_mail_admin/nylas_auth.html",
-                {
-                    "result": False,
-                    "message": "Failed to obtain grant_id from Nylas response",
-                },
-            )
-
-        # Update BOTH model and URI using the helper method
-        metadata = {}
-        if hasattr(grant_data, "__dict__"):
-            metadata = {
-                k: v
-                for k, v in grant_data.__dict__.items()
-                if k not in ["grant_id", "email", "provider", "grant_status"]
-            }
-
-        mailbox.update_nylas_grant_id(
-            grant_id=grant_id,
-            email=email or mailbox.from_email or "unknown@email.com",
-            provider=provider or "unknown",
-            metadata=metadata,
-        )
-
-        logger.info(
-            f"Successfully authenticated mailbox {mailbox.id} with grant {grant_id}"
-        )
-
+    if success and grant_info:
         return render(
             request,
             "django_mail_admin/nylas_auth.html",
             {
                 "result": True,
-                "mailbox": mailbox,
-                "email": email,
-                "provider": provider,
-                "grant_id": grant_id,
+                "mailbox": grant_info["mailbox"],
+                "email": grant_info["email"],
+                "provider": grant_info["provider"],
+                "grant_id": grant_info["grant_id"],
             },
         )
-
-    except Exception as e:
-        logger.error(
-            f"Nylas grant exchange failed for mailbox {mailbox.id}: {e}", exc_info=True
-        )
+    else:
         return render(
             request,
             "django_mail_admin/nylas_auth.html",
-            {"result": False, "message": f"Grant exchange failed: {str(e)}"},
+            {"result": False, "message": message},
         )

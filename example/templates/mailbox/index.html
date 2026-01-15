@@ -34,9 +34,9 @@
         <td><a href="{% url "social:begin" "google-oauth2" %}">Authorize Google</a></td>
         <td><a href="{% url 'mailbox_nylas_auth_step1' mbx.id %}">Connect Nylas</a></td>
         <td>
-            {% if mbx.nylas_grant %}
-                <span style="color: {% if mbx.nylas_grant.grant_status == 'valid' %}green{% else %}red{% endif %}">
-                    {{ mbx.nylas_grant.email }} ({{ mbx.nylas_grant.provider }}) - {{ mbx.nylas_grant.grant_status }}
+            {% if mbx.from_email %}
+                <span style="color: green">
+                    {{ mbx.from_email }} - Configured
                 </span>
             {% else %}
                 <span style="color: gray">Not connected</span>

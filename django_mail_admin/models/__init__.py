@@ -3,4 +3,3 @@ from .outgoing import *
 from .incoming import *
 from .templates import *
 from .logs import *
-from .nylas_grant import *

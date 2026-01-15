@@ -5,7 +5,7 @@ import logging
 
 from datetime import datetime
 
-from django_mail_admin.nylas_utils import NylasConnection
+from django_mail_admin.nylas_utils import NylasConnection, get_nylas_grant_backend
 
 from .base import EmailTransport
 
@@ -21,13 +21,39 @@ class NylasTransport(EmailTransport):
         self.owner_email: str = owner_email
         self.last_polled: datetime | None = last_polled
 
-    def connect(self, grant_id: str) -> None:
+    def connect(self, uri_grant_id: str = None) -> None:
         """
-        Establish connection to Nylas using grant_id from URI
-        The NYLAS_API_KEY is retrieved from Django settings
+        Establish connection to Nylas.
+
+        Automatically tries to use grant backend for security if configured.
+        Falls back to uri_grant_id if backend not available.
+
+        Args:
+            uri_grant_id: Grant ID from URI (fallback for backward compatibility)
         """
         try:
-            self.conn = NylasConnection(from_email=self.owner_email, grant_id=grant_id)
+            # Try to use grant backend (preferred, secure)
+            grant_backend = (
+                get_nylas_grant_backend(self.owner_email) if self.owner_email else None
+            )
+
+            if grant_backend and grant_backend.check_grant():
+                # Use secure blob storage
+                logger.debug(f"Using grant backend for {self.owner_email}")
+                self.conn = NylasConnection(
+                    from_email=self.owner_email, grant_backend=grant_backend
+                )
+            elif uri_grant_id:
+                # Fallback to URI-based (deprecated)
+                logger.debug(f"Using URI-based grant_id for {self.owner_email}")
+                self.conn = NylasConnection(
+                    from_email=self.owner_email, grant_id=uri_grant_id
+                )
+            else:
+                raise ValueError(
+                    f"No grant available for {self.owner_email}. "
+                    "Configure NYLAS_GRANT_BACKEND or provide uri_grant_id."
+                )
         except (TypeError, ValueError) as e:
             logger.warning("Couldn't authenticate with Nylas: %s" % e)
 
