@@ -37,7 +37,7 @@ class NylasTransport(EmailTransport):
                 get_nylas_grant_backend(self.owner_email) if self.owner_email else None
             )
 
-            if grant_backend and grant_backend.check_grant():
+            if grant_backend:
                 # Use secure blob storage
                 logger.debug(f"Using grant backend for {self.owner_email}")
                 self.conn = NylasConnection(

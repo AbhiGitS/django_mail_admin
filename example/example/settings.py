@@ -164,7 +164,7 @@ NYLAS_GRANT_BACKENDS = {
             "NYLAS_GRANT_AZ_CONNECTION_STR", default=""
         ),
         "NYLAS_GRANT_AZ_CONTAINER_PATH": config(
-            "NYLAS_GRANT_AZ_CONTAINER_PATH", default="nylas-grants"
+            "NYLAS_GRANT_AZ_CONTAINER_PATH", default="chargeup-nylas-grants"
         ),
         "NYLAS_GRANT_AZ_BLOB_NAME": config(
             "NYLAS_GRANT_AZ_BLOB_NAME", default="nylas_grant.json"
