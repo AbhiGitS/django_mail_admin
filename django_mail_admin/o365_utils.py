@@ -185,6 +185,7 @@ class O365Connection:
         new_draft_message = (
             reply_to_message.reply() if reply_to_message else mailbox.new_message()
         )
+        new_draft_message.sender = msg.from_email
         return new_draft_message
 
     def _prepare_attachment_for_dispatch(self, attachment) -> dict:
