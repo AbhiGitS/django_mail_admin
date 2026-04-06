@@ -27,8 +27,8 @@ DEBUG = True
 ALLOWED_HOSTS = ["*"]
 
 
-def config(key):
-    return _config(key, default="")
+def config(key, default=""):
+    return _config(key, default=default)
 
 
 # Application definition
@@ -136,8 +136,42 @@ DJANGO_MAIL_ADMIN = {
         # "smtp": "django.core.mail.backends.smtp.EmailBackend",
         "o365": "django_mail_admin.backends.O365Backend",
         "gmail": "django_mail_admin.backends.GmailOAuth2Backend",
+        "nylas": "django_mail_admin.backends.NylasBackend",
     }
 }
+
+# ==========================================
+# Nylas Configuration
+# ==========================================
+NYLAS_API_KEY = config("NYLAS_API_KEY")  # Common API key for all Nylas accounts
+NYLAS_API_URI = config("NYLAS_API_URI", default="https://api.us.nylas.com")  # US or EU
+NYLAS_CLIENT_ID = config(
+    "NYLAS_CLIENT_ID"
+)  # Nylas Account Client-ID (also used as salt for grant blob naming)
+NYLAS_CLIENT_SECRET = NYLAS_API_KEY  # Same as API KEY
+
+# Nylas Grant Storage Backend Configuration
+# This replaces storing sensitive grant data (bearer tokens) in the database
+NYLAS_GRANT_BACKEND = config(
+    "NYLAS_GRANT_BACKEND", default="AZBlobStorageNylasGrantBackend"
+)
+
+NYLAS_GRANT_BACKENDS = {
+    "AZBlobStorageNylasGrantBackend": {
+        # Azure Blob Storage configuration for secure grant storage
+        # Can reuse same Azure storage account as O365 or use separate container
+        "NYLAS_GRANT_AZ_CONNECTION_STR": config(
+            "NYLAS_GRANT_AZ_CONNECTION_STR", default=""
+        ),
+        "NYLAS_GRANT_AZ_CONTAINER_PATH": config(
+            "NYLAS_GRANT_AZ_CONTAINER_PATH", default="chargeup-nylas-grants"
+        ),
+        "NYLAS_GRANT_AZ_BLOB_NAME": config(
+            "NYLAS_GRANT_AZ_BLOB_NAME", default="nylas_grant.json"
+        ),
+    },
+}
+
 AUTHENTICATION_BACKENDS = (
     "social_core.backends.google.GoogleOAuth2",
     "django.contrib.auth.backends.ModelBackend",

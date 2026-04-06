@@ -21,6 +21,7 @@ from django.core.mail.backends.base import BaseEmailBackend
 
 from django_mail_admin.o365_utils import O365Connection
 from django_mail_admin.google_utils import generate_oauth2_string, refresh_authorization
+from django_mail_admin.nylas_utils import NylasConnection
 
 logger = logging.getLogger(__name__)
 
@@ -580,3 +581,103 @@ class GmailOAuth2Backend(EmailBackend):
                 self.close()
 
             return num_sent
+
+
+class NylasBackend(BaseEmailBackend):
+    """Backend for sending emails via Nylas API"""
+
+    def __init__(self, fail_silently: bool = False, **kwargs) -> None:
+        super().__init__(fail_silently, **kwargs)
+        self.conn: Optional[NylasConnection] = None
+        self.from_email: str | None = None
+        self.fail_silently: bool = fail_silently
+        self.configuration_id: Optional[int] = None
+        self._lock = threading.RLock()
+
+    def close(self):
+        """Clean up connection"""
+        with self._lock:
+            if self.conn:
+                self.conn = None
+                self.from_email = None
+                self.configuration_id = None
+
+    def open(self):
+        """Open Nylas connection"""
+        with self._lock:
+            from django_mail_admin.nylas_utils import get_nylas_grant_backend
+
+            # Find mailbox by from_email to get configuration_id
+            mailbox = Mailbox.objects.filter(from_email__iexact=self.from_email).first()
+
+            if not mailbox:
+                raise ValueError(
+                    f"Unable to find Mailbox with from_email={self.from_email}"
+                )
+
+            # Existing connection is valid
+            if self.conn and self.configuration_id == mailbox.id:
+                return
+
+            try:
+                # Try grant backend first (preferred, secure)
+                grant_backend = get_nylas_grant_backend(self.from_email)
+
+                if grant_backend and grant_backend.check_grant():
+                    # Use secure blob storage backend
+                    logger.info(f"Using grant backend for {self.from_email}")
+                    self.conn = NylasConnection(
+                        from_email=self.from_email, grant_backend=grant_backend
+                    )
+
+                if not self.conn:
+                    raise ValueError(
+                        f"Unable to establish connection by securing grant information for "
+                        f"email={self.from_email}"
+                    )
+
+                self.configuration_id = mailbox.id
+
+            except Exception as e:
+                self.close()
+                raise
+
+    def send_messages(self, email_messages) -> int:
+        """Send messages via Nylas"""
+        if not email_messages:
+            return 0
+
+        with self._lock:
+            sent_count = 0
+            # Sort by from_email to reduce connection changes
+            email_messages = sorted(email_messages, key=lambda m: m.from_email)
+
+            for msg in email_messages:
+                try:
+                    # Handle OAuth username mapping (similar to O365/Gmail)
+                    oauth_username = (
+                        EmailAddressOAuthMapping.objects.filter(
+                            send_as_email=msg.from_email
+                        )
+                        .values_list("oauth_username", flat=True)
+                        .first()
+                    ) or msg.from_email
+
+                    # Reconnect if from_email changed
+                    if not self.conn or self.from_email != oauth_username:
+                        self.close()
+                        self.from_email = oauth_username
+                        self.open()
+
+                    # Send via Nylas
+                    # Note: Grant validation happens in NylasConnection.send_message()
+                    # Exceptions (NylasGrantExpired, NylasGrantInvalid) will bubble up
+                    if self.conn.send_message(msg):
+                        sent_count += 1
+
+                except Exception as e:
+                    if not self.fail_silently:
+                        raise
+                    logger.error(f"Failed to send via Nylas: {str(e)}")
+
+            return sent_count

@@ -37,6 +37,7 @@ from django_mail_admin.transports import (
     MMDFTransport,
     GmailImapTransport,
     O365Transport,
+    NylasTransport,
 )
 
 logger = logging.getLogger(__name__)
@@ -175,6 +176,10 @@ class Mailbox(models.Model):
                 "For Office 365 email accounts use: 'office365:username@example.com:/?"
                 "client_id_key=<client_id_key>&client_secret_key=<client_secret_key>&client_app_id=<client_app_id_str>'. Default values of client_id_key and client_secret_key are 'O365_CLIENT_ID', and 'O365_CLIENT_SECRET'. When all 3 are provided it will lookup client_id_key/secret_key values from client_app_id configuration."
                 "<br />supports only on-behalf-of-a-user; thus requires user's auth & consent in a separate authentication flow via console/ or web-browser."
+                "<br /><br />"
+                "For Nylas email accounts use: 'nylas:username@example.com:/?grant_id=<grant_id>'. "
+                "The NYLAS_API_KEY must be configured in Django settings.py. "
+                "Nylas provides unified API access to Gmail, Outlook, IMAP and other providers."
                 "<br />"
                 "Be sure to urlencode your username and password should they "
                 "contain illegal characters (like @, :, etc)."
@@ -211,6 +216,10 @@ class Mailbox(models.Model):
                 # For Office365, we can check if the connection is authenticated
                 if not connection.is_authenticated:
                     return False, "Office365 connection not authenticated"
+            elif self.type == NylasTransport.SCHEME:  # 'nylas'
+                # For Nylas, check if connection is authenticated
+                if not connection.conn or not connection.conn.is_authenticated:
+                    return False, "Nylas connection not authenticated"
             # For local file transports, just check if the connection exists
             elif self.type in ["maildir", "mbox", "babyl", "mh", "mmdf"]:
                 # These are local file transports, so just check if the path exists
@@ -375,6 +384,11 @@ class Mailbox(models.Model):
                 client_id_key=self._query_string.get("client_id_key", [""])[0],
                 client_secret_key=self._query_string.get("client_secret_key", [""])[0],
             )
+        elif self.type == NylasTransport.SCHEME:  #'nylas'
+            conn = NylasTransport(
+                owner_email=self.from_email, last_polled=self.last_polling
+            )
+            conn.connect(uri_grant_id=self._query_string.get("grant_id", [""])[0])
         elif self.type == "pop3":
             conn = Pop3Transport(
                 self.location, port=self.port if self.port else None, ssl=self.use_ssl

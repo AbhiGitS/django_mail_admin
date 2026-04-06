@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nylas Authentication</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .success {
+            color: #28a745;
+            border-left: 4px solid #28a745;
+            padding-left: 15px;
+        }
+        .error {
+            color: #dc3545;
+            border-left: 4px solid #dc3545;
+            padding-left: 15px;
+        }
+        h1 {
+            margin-top: 0;
+        }
+        .info {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        .info-item {
+            margin: 8px 0;
+        }
+        .info-label {
+            font-weight: bold;
+            display: inline-block;
+            width: 120px;
+        }
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            margin-top: 20px;
+        }
+        .button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        {% if result %}
+            <div class="success">
+                <h1>✓ Authentication Successful</h1>
+                <p>Your mailbox has been successfully connected to Nylas.</p>
+            </div>
+
+            {% if email or provider or grant_id or mailbox %}
+            <div class="info">
+                <h3>Connection Details</h3>
+                {% if mailbox %}
+                <div class="info-item">
+                    <span class="info-label">Mailbox:</span>
+                    <span>{{ mailbox.name }}</span>
+                </div>
+                {% endif %}
+                {% if email %}
+                <div class="info-item">
+                    <span class="info-label">Email:</span>
+                    <span>{{ email }}</span>
+                </div>
+                {% endif %}
+                {% if provider %}
+                <div class="info-item">
+                    <span class="info-label">Provider:</span>
+                    <span>{{ provider|title }}</span>
+                </div>
+                {% endif %}
+                {% if grant_id %}
+                <div class="info-item">
+                    <span class="info-label">Grant ID:</span>
+                    <span style="font-family: monospace; font-size: 0.9em;">{{ grant_id }}</span>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <p>You can now close this window and return to the application.</p>
+            <a href="/admin/django_mail_admin/mailbox/" class="button">Go to Mailboxes</a>
+        {% else %}
+            <div class="error">
+                <h1>✗ Authentication Failed</h1>
+                <p><strong>Error:</strong> {{ message }}</p>
+            </div>
+
+            <p>Please try again or contact your administrator if the problem persists.</p>
+            <a href="/admin/django_mail_admin/mailbox/" class="button">Back to Mailboxes</a>
+        {% endif %}
+    </div>
+</body>
+</html>

@@ -67,3 +67,92 @@ def mailbox_auth_step2(request):
     # if result is True, then authentication was succesful
     #  and the auth token is stored in the token backend
     return render(request, "mailbox/auth.html", {"result": result})
+
+
+# Nylas OAuth views
+def mailbox_nylas_auth_step1(request, id):
+    """
+    Nylas OAuth Step 1: Redirect to Nylas hosted authentication
+    """
+    from urllib.parse import urlencode
+    from django.conf import settings
+
+    mbx = get_object_or_404(Mailbox, pk=id)
+
+    # Build callback URL
+    callback = request.build_absolute_uri(reverse("mailbox_nylas_auth_step2"))
+
+    # Get Nylas configuration
+    client_id = getattr(settings, "NYLAS_CLIENT_ID", None)
+    api_uri = getattr(settings, "NYLAS_API_URI", "https://api.us.nylas.com")
+
+    if not client_id:
+        return render(
+            request,
+            "mailbox/auth.html",
+            {"result": False, "message": "NYLAS_CLIENT_ID not configured in settings"},
+        )
+
+    # Build OAuth URL
+    params = {
+        "client_id": client_id,
+        "redirect_uri": callback,
+        "response_type": "code",
+        "state": str(id),
+        "access_type": "online",
+    }
+
+    auth_url = f"{api_uri}/v3/connect/auth?" + urlencode(params)
+    return redirect(auth_url)
+
+
+def mailbox_nylas_auth_step2(request):
+    """
+    Nylas OAuth Step 2: Handle callback and exchange code for grant
+    """
+    from django.conf import settings
+
+    code = request.GET.get("code")
+    state = request.GET.get("state")
+    error = request.GET.get("error")
+
+    if error:
+        return render(
+            request,
+            "mailbox/auth.html",
+            {"result": False, "message": f"Nylas OAuth error: {error}"},
+        )
+
+    if not code or not state:
+        return render(
+            request,
+            "mailbox/auth.html",
+            {"result": False, "message": "Missing code or state parameter"},
+        )
+
+    mbx = get_object_or_404(Mailbox, pk=state)
+
+    # Exchange code for grant using shared utility function
+    from django_mail_admin.nylas_utils import exchange_nylas_code_for_grant
+
+    callback = request.build_absolute_uri(reverse("mailbox_nylas_auth_step2"))
+
+    success, message, grant_info = exchange_nylas_code_for_grant(
+        code=code, redirect_uri=callback, mailbox=mbx
+    )
+
+    if success and grant_info:
+        return render(
+            request,
+            "mailbox/auth.html",
+            {
+                "result": True,
+                "message": f"Successfully connected Nylas account: {grant_info['email']} ({grant_info['provider']})",
+            },
+        )
+    else:
+        return render(
+            request,
+            "mailbox/auth.html",
+            {"result": False, "message": message},
+        )
