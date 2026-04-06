@@ -185,6 +185,13 @@ O365_CLIENT_APP_SETTINGS = {
         "O365_CLIENT_ID": config("O365_CLIENT_ID"),
         "O365_CLIENT_SECRET": config("O365_CLIENT_SECRET"),
     },
+    "chargeup.ai_app": {
+        # TBD certificate support
+        "auth": "token_secret",  #'certificate'
+        "TOKEN_BACKEND": "AZBlobStorageTokenBackend",
+        "O365_CLIENT_ID": config("O365_CLIENT_ID"),
+        "O365_CLIENT_SECRET": config("O365_CLIENT_SECRET"),
+    },
 }
 
 O365_TOKEN_BACKENDS = {
